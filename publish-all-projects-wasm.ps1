@@ -349,7 +349,8 @@ try {
             "-r",
             "browser-wasm",
             "-c",
-            "Release"
+            "Release",
+            "/p:DebugType=none"
         )
 
         if (-not [string]::IsNullOrWhiteSpace($CustomHtmlFileName)) {
