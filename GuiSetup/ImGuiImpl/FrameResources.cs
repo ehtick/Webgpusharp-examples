@@ -8,7 +8,7 @@ internal unsafe struct FrameResources : IDisposable
 {
     public BufferHandle IndexBuffer;
     public BufferHandle VertexBuffer;
-    public uint* IndexBufferHost;
+    public ushort* IndexBufferHost;
     public ImDrawVert* VertexBufferHost;
     public int IndexBufferSize;
     public int VertexBufferSize;

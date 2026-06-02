@@ -23,7 +23,7 @@ internal static class ImGuiHash
         0xBDBDF21C,0xCABAC28A,0x53B39330,0x24B4A3A6,0xBAD03605,0xCDD70693,0x54DE5729,0x23D967BF,0xB3667A2E,0xC4614AB8,0x5D681B02,0x2A6F2B94,0xB40BBE37,0xC30C8EA1,0x5A05DF1B,0x2D02EF8D,
     ];
 
-    public unsafe static uint ImHashData(ReadOnlySpan<byte> span, uint seed)
+    public unsafe static uint ImHashData(ReadOnlySpan<byte> span, uint seed = 0)
     {
         fixed (byte* ptr = span)
         {
@@ -32,7 +32,7 @@ internal static class ImGuiHash
     }
 
 
-    public unsafe static uint ImHashData(void* data, nuint dataSize, uint seed)
+    public unsafe static uint ImHashData(void* data, nuint dataSize, uint seed = 0)
     {
         uint crc = ~seed;
         byte* bytes = (byte*)data;

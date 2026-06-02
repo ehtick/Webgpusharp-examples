@@ -1,849 +1,1569 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ImGuiNET;
 using WebGpuSharp;
 using WebGpuSharp.FFI;
 using static WebGpuSharp.Marshalling.WebGPUMarshal;
+using static GuiSetup.ImGuiImpl.ImGuiDisposer;
 using Buffer = WebGpuSharp.Buffer;
+using System.Numerics;
 
-namespace GuiSetup;
+namespace GuiSetup.ImGuiImpl;
 
 public static unsafe class ImGui_Impl_WebGPUSharp
 {
-	private static readonly nint s_backendName = Marshal.StringToHGlobalAnsi("imgui_impl_webgpu");
-	private static readonly IntPtr s_resetRenderStateCallback = new(-1);
-	private static readonly uint[] s_crc32LookupTable =
-	[
-		0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3, 0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988, 0x09B64C2B, 0x7EB17CBD, 0xE7B82D07, 0x90BF1D91,
-		0x1DB71064, 0x6AB020F2, 0xF3B97148, 0x84BE41DE, 0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7, 0x136C9856, 0x646BA8C0, 0xFD62F97A, 0x8A65C9EC, 0x14015C4F, 0x63066CD9, 0xFA0F3D63, 0x8D080DF5,
-		0x3B6E20C8, 0x4C69105E, 0xD56041E4, 0xA2677172, 0x3C03E4D1, 0x4B04D447, 0xD20D85FD, 0xA50AB56B, 0x35B5A8FA, 0x42B2986C, 0xDBBBC9D6, 0xACBCF940, 0x32D86CE3, 0x45DF5C75, 0xDCD60DCF, 0xABD13D59,
-		0x26D930AC, 0x51DE003A, 0xC8D75180, 0xBFD06116, 0x21B4F4B5, 0x56B3C423, 0xCFBA9599, 0xB8BDA50F, 0x2802B89E, 0x5F058808, 0xC60CD9B2, 0xB10BE924, 0x2F6F7C87, 0x58684C11, 0xC1611DAB, 0xB6662D3D,
-		0x76DC4190, 0x01DB7106, 0x98D220BC, 0xEFD5102A, 0x71B18589, 0x06B6B51F, 0x9FBFE4A5, 0xE8B8D433, 0x7807C9A2, 0x0F00F934, 0x9609A88E, 0xE10E9818, 0x7F6A0DBB, 0x086D3D2D, 0x91646C97, 0xE6635C01,
-		0x6B6B51F4, 0x1C6C6162, 0x856530D8, 0xF262004E, 0x6C0695ED, 0x1B01A57B, 0x8208F4C1, 0xF50FC457, 0x65B0D9C6, 0x12B7E950, 0x8BBEB8EA, 0xFCB9887C, 0x62DD1DDF, 0x15DA2D49, 0x8CD37CF3, 0xFBD44C65,
-		0x4DB26158, 0x3AB551CE, 0xA3BC0074, 0xD4BB30E2, 0x4ADFA541, 0x3DD895D7, 0xA4D1C46D, 0xD3D6F4FB, 0x4369E96A, 0x346ED9FC, 0xAD678846, 0xDA60B8D0, 0x44042D73, 0x33031DE5, 0xAA0A4C5F, 0xDD0D7CC9,
-		0x5005713C, 0x270241AA, 0xBE0B1010, 0xC90C2086, 0x5768B525, 0x206F85B3, 0xB966D409, 0xCE61E49F, 0x5EDEF90E, 0x29D9C998, 0xB0D09822, 0xC7D7A8B4, 0x59B33D17, 0x2EB40D81, 0xB7BD5C3B, 0xC0BA6CAD,
-		0xEDB88320, 0x9ABFB3B6, 0x03B6E20C, 0x74B1D29A, 0xEAD54739, 0x9DD277AF, 0x04DB2615, 0x73DC1683, 0xE3630B12, 0x94643B84, 0x0D6D6A3E, 0x7A6A5AA8, 0xE40ECF0B, 0x9309FF9D, 0x0A00AE27, 0x7D079EB1,
-		0xF00F9344, 0x8708A3D2, 0x1E01F268, 0x6906C2FE, 0xF762575D, 0x806567CB, 0x196C3671, 0x6E6B06E7, 0xFED41B76, 0x89D32BE0, 0x10DA7A5A, 0x67DD4ACC, 0xF9B9DF6F, 0x8EBEEFF9, 0x17B7BE43, 0x60B08ED5,
-		0xD6D6A3E8, 0xA1D1937E, 0x38D8C2C4, 0x4FDFF252, 0xD1BB67F1, 0xA6BC5767, 0x3FB506DD, 0x48B2364B, 0xD80D2BDA, 0xAF0A1B4C, 0x36034AF6, 0x41047A60, 0xDF60EFC3, 0xA867DF55, 0x316E8EEF, 0x4669BE79,
-		0xCB61B38C, 0xBC66831A, 0x256FD2A0, 0x5268E236, 0xCC0C7795, 0xBB0B4703, 0x220216B9, 0x5505262F, 0xC5BA3BBE, 0xB2BD0B28, 0x2BB45A92, 0x5CB36A04, 0xC2D7FFA7, 0xB5D0CF31, 0x2CD99E8B, 0x5BDEAE1D,
-		0x9B64C2B0, 0xEC63F226, 0x756AA39C, 0x026D930A, 0x9C0906A9, 0xEB0E363F, 0x72076785, 0x05005713, 0x95BF4A82, 0xE2B87A14, 0x7BB12BAE, 0x0CB61B38, 0x92D28E9B, 0xE5D5BE0D, 0x7CDCEFB7, 0x0BDBDF21,
-		0x86D3D2D4, 0xF1D4E242, 0x68DDB3F8, 0x1FDA836E, 0x81BE16CD, 0xF6B9265B, 0x6FB077E1, 0x18B74777, 0x88085AE6, 0xFF0F6A70, 0x66063BCA, 0x11010B5C, 0x8F659EFF, 0xF862AE69, 0x616BFFD3, 0x166CCF45,
-		0xA00AE278, 0xD70DD2EE, 0x4E048354, 0x3903B3C2, 0xA7672661, 0xD06016F7, 0x4969474D, 0x3E6E77DB, 0xAED16A4A, 0xD9D65ADC, 0x40DF0B66, 0x37D83BF0, 0xA9BCAE53, 0xDEBB9EC5, 0x47B2CF7F, 0x30B5FFE9,
-		0xBDBDF21C, 0xCABAC28A, 0x53B39330, 0x24B4A3A6, 0xBAD03605, 0xCDD70693, 0x54DE5729, 0x23D967BF, 0xB3667A2E, 0xC4614AB8, 0x5D681B02, 0x2A6F2B94, 0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D,
-	];
+    private static readonly GCHandle s_backendNameHandle =
+        GCHandle.Alloc("imgui_impl_webgpu\0"u8.ToArray(), GCHandleType.Pinned);
+    private static readonly GCHandle s_stage_desc_EntryPointHandle =
+        GCHandle.Alloc("main\0"u8.ToArray(), GCHandleType.Pinned);
 
-	private const string ShaderVertWgsl = @"
-struct VertexInput {
-	@location(0) position: vec2<f32>,
-	@location(1) uv: vec2<f32>,
-	@location(2) color: vec4<f32>,
-};
+    static ImGui_ImplWGPU_Data* ImGui_ImplWGPU_GetBackendData()
+    {
+        return ImGui.GetCurrentContext() != 0 ? (ImGui_ImplWGPU_Data*)ImGui.GetIO().BackendRendererUserData : null;
+    }
 
-struct VertexOutput {
-	@builtin(position) position: vec4<f32>,
-	@location(0) color: vec4<f32>,
-	@location(1) uv: vec2<f32>,
-};
+    static ComputeStateFFI ImGui_ImplWGPU_CreateShaderModule(ReadOnlySpan<byte> wgsl_source)
+    {
+        fixed (byte* wgsl_source_ptr = wgsl_source)
+        {
+            ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
 
-struct Uniforms {
-	mvp: mat4x4<f32>,
-	gamma: f32,
-};
+            ShaderSourceWGSLFFI wgsl_desc = new()
+            {
+                Chain = new()
+                {
+                    SType = SType.ShaderSourceWGSL,
+                    Next = null,
+                },
+                Code = StringViewFFI.CreateExplicitlySized(wgsl_source_ptr, (nuint)wgsl_source.Length),
+            };
 
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+            ShaderModuleDescriptorFFI desc = new()
+            {
+                NextInChain = &wgsl_desc.Chain
+            };
 
-@vertex
-fn main(in: VertexInput) -> VertexOutput {
-	var out: VertexOutput;
-	out.position = uniforms.mvp * vec4<f32>(in.position, 0.0, 1.0);
-	out.color = in.color;
-	out.uv = in.uv;
-	return out;
+            ComputeStateFFI stage_desc = new()
+            {
+                Module = bd->wgpuDevice.CreateShaderModule(&desc),
+                EntryPoint = StringViewFFI.CreateNullTerminated((byte*)s_stage_desc_EntryPointHandle.AddrOfPinnedObject())
+            };
+            return stage_desc;
+        }
+    }
+
+    public static unsafe bool ImGui_ImplWGPU_Init(DeviceHandle device, uint numFramesInFlight, TextureFormat rtFormat, TextureFormat depthFormat)
+    {
+        var io = ImGui.GetIO();
+        Debug.Assert(io.BackendRendererUserData == IntPtr.Zero, "Already initialized a renderer backend!");
+
+        ImGui_ImplWGPU_Data* bd = (ImGui_ImplWGPU_Data*)NativeMemory.Alloc((nuint)sizeof(ImGui_ImplWGPU_Data));
+        io.NativePtr->BackendPlatformUserData = bd;
+        io.NativePtr->BackendPlatformName = (byte*)s_backendNameHandle.AddrOfPinnedObject();
+        io.NativePtr->BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
+
+        bd->wgpuDevice = device;
+        bd->defaultQueue = device.GetQueue();
+        bd->renderTargetFormat = rtFormat;
+        bd->depthStencilFormat = depthFormat;
+        bd->numFramesInFlight = numFramesInFlight;
+        bd->frameIndex = uint.MaxValue;
+
+        bd->renderResources.FontTexture = TextureHandle.Null;
+        bd->renderResources.FontTextureView = TextureViewHandle.Null;
+        bd->renderResources.Sampler = SamplerHandle.Null;
+        bd->renderResources.Uniforms = BufferHandle.Null;
+        bd->renderResources.CommonBindGroup = BindGroupHandle.Null;
+        bd->renderResources.ImageBindGroups.Reserve(100);
+        bd->renderResources.ImageBindGroup = BindGroupHandle.Null;
+        bd->renderResources.ImageBindGroupLayout = BindGroupLayoutHandle.Null;
+
+        bd->pFrameResources = (FrameResources*)NativeMemory.Alloc(numFramesInFlight * (nuint)sizeof(FrameResources));
+        for (int i = 0; i < numFramesInFlight; i++)
+        {
+            FrameResources* fr = &bd->pFrameResources[i];
+            fr->IndexBuffer = BufferHandle.Null;
+            fr->VertexBuffer = BufferHandle.Null;
+            fr->IndexBufferHost = null;
+            fr->VertexBufferHost = null;
+            fr->IndexBufferSize = 10000;
+            fr->VertexBufferSize = 5000;
+        }
+
+        return true;
+    }
+
+    public static void ImGui_ImplWGPU_Shutdown()
+    {
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+        Debug.Assert(bd != null, "No renderer backend to shutdown, or already shutdown?");
+        ref ImGuiIO io = ref *ImGui.GetIO().NativePtr;
+
+        ImGui_ImplWGPU_InvalidateDeviceObjects();
+        NativeMemory.Free(bd->pFrameResources);
+        bd->pFrameResources = null;
+        bd->defaultQueue.Dispose();
+        bd->defaultQueue = QueueHandle.Null;
+        bd->wgpuDevice = DeviceHandle.Null;
+        bd->numFramesInFlight = 0;
+        bd->frameIndex = uint.MaxValue;
+
+        io.BackendRendererName = null;
+        io.BackendRendererUserData = null;
+        io.BackendFlags &= ~ImGuiBackendFlags.RendererHasVtxOffset;
+        bd->renderResources.ImageBindGroups.Dispose();
+        NativeMemory.Free(bd);
+    }
+
+    public static void ImGui_ImplWGPU_NewFrame()
+    {
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+        if (RenderPipelineHandle.IsNull(bd->pipelineState))
+        {
+            ImGui_ImplWGPU_CreateDeviceObjects();
+        }
+    }
+
+    public static bool ImGui_ImplWGPU_CreateDeviceObjects()
+    {
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+        if (DeviceHandle.IsNull(bd->wgpuDevice))
+        {
+            return false;
+        }
+
+        if (!RenderPipelineHandle.IsNull(bd->pipelineState))
+        {
+            ImGui_ImplWGPU_InvalidateDeviceObjects();
+        }
+
+        // Create render pipeline
+        RenderPipelineDescriptorFFI graphics_pipeline_desc = new()
+        {
+            Vertex = default,//set later
+            Primitive = new()
+            {
+                Topology = PrimitiveTopology.TriangleList,
+                StripIndexFormat = IndexFormat.Undefined,
+                FrontFace = FrontFace.CW,
+                CullMode = CullMode.None,
+            },
+            Multisample = new()
+            {
+                Count = 1,
+                Mask = uint.MaxValue,
+                AlphaToCoverageEnabled = false,
+            },
+        };
+
+        // Bind group layouts
+        InlineArray2<BindGroupLayoutEntry> common_bg_layout_entries = default;
+        common_bg_layout_entries[0] = new()
+        {
+            Binding = 0,
+            Visibility = ShaderStage.Vertex | ShaderStage.Fragment,
+            Buffer = new() { Type = BufferBindingType.Uniform },
+        };
+        common_bg_layout_entries[1] = new()
+        {
+            Binding = 1,
+            Visibility = ShaderStage.Fragment,
+            Sampler = new() { Type = SamplerBindingType.Filtering },
+        };
+
+        BindGroupLayoutEntry image_bg_layout_entries = new()
+        {
+            Binding = 0,
+            Visibility = ShaderStage.Fragment,
+            Texture = new()
+            {
+                SampleType = TextureSampleType.Float,
+                ViewDimension = TextureViewDimension.D2,
+            }
+        };
+
+        BindGroupLayoutDescriptorFFI common_bg_layout_desc = new()
+        {
+            EntryCount = 2,
+            Entries = &common_bg_layout_entries[0],
+        };
+
+        BindGroupLayoutDescriptorFFI image_bg_layout_desc = new()
+        {
+            EntryCount = 1,
+            Entries = &image_bg_layout_entries,
+        };
+
+        InlineArray2<BindGroupLayoutHandle> bg_layouts = default;
+        bg_layouts[0] = bd->wgpuDevice.CreateBindGroupLayout(&common_bg_layout_desc);
+        bg_layouts[1] = bd->wgpuDevice.CreateBindGroupLayout(&image_bg_layout_desc);
+
+
+        PipelineLayoutDescriptorFFI layout_desc = new()
+        {
+            BindGroupLayoutCount = 2,
+            BindGroupLayouts = &bg_layouts[0],
+        };
+        graphics_pipeline_desc.Layout = bd->wgpuDevice.CreatePipelineLayout(&layout_desc);
+
+        // Create the vertex shader
+        ComputeStateFFI vertex_shader_desc = ImGui_ImplWGPU_CreateShaderModule(ImGuiShaders.ShaderVertWgsl);
+        graphics_pipeline_desc.Vertex.Module = vertex_shader_desc.Module;
+        graphics_pipeline_desc.Vertex.EntryPoint = vertex_shader_desc.EntryPoint;
+
+
+        InlineArray3<VertexAttribute> attribute_desc = default;
+        attribute_desc[0] = new()
+        {
+            Format = VertexFormat.Float32x2,
+            Offset = (ulong)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.pos)),
+            ShaderLocation = 0,
+        };
+        attribute_desc[1] = new()
+        {
+            Format = VertexFormat.Float32x2,
+            Offset = (ulong)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.uv)),
+            ShaderLocation = 1,
+        };
+        attribute_desc[2] = new()
+        {
+            Format = VertexFormat.Unorm8x4,
+            Offset = (ulong)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.col)),
+            ShaderLocation = 2,
+        };
+
+        VertexBufferLayoutFFI buffer_layouts = new VertexBufferLayoutFFI()
+        {
+            ArrayStride = (ulong)sizeof(ImDrawVert),
+            StepMode = VertexStepMode.Vertex,
+            AttributeCount = 3,
+            Attributes = &attribute_desc[0],
+        };
+
+        graphics_pipeline_desc.Vertex.BufferCount = 1;
+        graphics_pipeline_desc.Vertex.Buffers = &buffer_layouts;
+
+        // Create the pixel shader
+        ComputeStateFFI pixel_shader_desc = ImGui_ImplWGPU_CreateShaderModule(ImGuiShaders.ShaderFragWgsl);
+
+        BlendState blend_state = new()
+        {
+            Alpha = new BlendComponent
+            {
+                Operation = BlendOperation.Add,
+                SrcFactor = BlendFactor.One,
+                DstFactor = BlendFactor.OneMinusSrcAlpha,
+            },
+            Color = new BlendComponent
+            {
+                Operation = BlendOperation.Add,
+                SrcFactor = BlendFactor.SrcAlpha,
+                DstFactor = BlendFactor.OneMinusSrcAlpha,
+            }
+        };
+
+        ColorTargetStateFFI color_state = new()
+        {
+            Format = bd->renderTargetFormat,
+            Blend = &blend_state,
+            WriteMask = ColorWriteMask.All,
+        };
+
+        FragmentStateFFI fragment_state = new()
+        {
+            Module = pixel_shader_desc.Module,
+            EntryPoint = pixel_shader_desc.EntryPoint,
+            TargetCount = 1,
+            Targets = &color_state
+        };
+
+        graphics_pipeline_desc.Fragment = &fragment_state;
+
+        // Create depth-stencil State
+        DepthStencilState depth_stencil_state = new()
+        {
+            Format = bd->depthStencilFormat,
+            DepthWriteEnabled = OptionalBool.True,
+            DepthCompare = CompareFunction.Always,
+            StencilFront = new StencilFaceState
+            {
+                Compare = CompareFunction.Always,
+            },
+            StencilBack = new StencilFaceState
+            {
+                Compare = CompareFunction.Always,
+            }
+        };
+
+        // Configure disabled depth-stencil state
+        graphics_pipeline_desc.DepthStencil = bd->depthStencilFormat == TextureFormat.Undefined ? null : &depth_stencil_state;
+
+        bd->pipelineState = bd->wgpuDevice.CreateRenderPipeline(&graphics_pipeline_desc);
+
+        return true;
+    }
+
+    public static void ImGui_ImplWGPU_InvalidateDeviceObjects()
+    {
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+        if (bd == null)
+        {
+            return;
+        }
+
+        SafeRelease(ref bd->pipelineState);
+        SafeRelease(bd->renderResources);
+
+        var io = ImGui.GetIO();
+        io.Fonts.SetTexID(IntPtr.Zero);
+
+        for (int i = 0; i < bd.FrameResources.Length; i++)
+        {
+            SafeRelease(ref bd.FrameResources[i]);
+            ResetFrameResources(ref bd.FrameResources[i]);
+        }
+
+        bd.FrameIndex = uint.MaxValue;
+    }
+
+    public static void ImGui_ImplWGPU_RenderDrawData(ImDrawDataPtr draw_data, RenderPassEncoderHandle passEncoder)
+    {
+        // Avoid rendering when minimized
+        if (draw_data.DisplaySize.X <= 0.0f || draw_data.DisplaySize.Y <= 0.0f)
+        {
+            return;
+        }
+
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+        bd->frameIndex = bd->frameIndex + 1;
+        FrameResources* fr = &bd->pFrameResources[bd->frameIndex % bd->numFramesInFlight];
+
+        // Create and grow vertex/index buffers if needed
+        if (fr->VertexBuffer == null || fr->VertexBufferSize < draw_data.TotalVtxCount)
+        {
+            if (!BufferHandle.IsNull(fr->VertexBuffer))
+            {
+                fr->VertexBuffer.Destroy();
+                fr->VertexBuffer.Release();
+            }
+            SafeRelease(ref fr->VertexBufferHost);
+            fr->VertexBufferSize = draw_data.TotalVtxCount + 5000;
+
+            BufferDescriptor vb_desc = new()
+            {
+                Label = "Dear ImGui Vertex buffer",
+                Usage = BufferUsage.CopyDst | BufferUsage.Vertex,
+                Size = Align((ulong)fr->VertexBufferSize * (ulong)sizeof(ImDrawVert), 4),
+                MappedAtCreation = false,
+            };
+            fr->VertexBuffer = bd->wgpuDevice.CreateBuffer(vb_desc);
+            if (BufferHandle.IsNull(fr->VertexBuffer))
+            {
+                return;
+            }
+
+            fr->VertexBufferHost = (ImDrawVert*)NativeMemory.Alloc((nuint)fr->VertexBufferSize, (nuint)sizeof(ImDrawVert));
+        }
+
+        if (fr->IndexBuffer == null || fr->IndexBufferSize < draw_data.TotalIdxCount)
+        {
+            if (fr->IndexBuffer != null)
+            {
+                fr->IndexBuffer.Destroy();
+                fr->IndexBuffer.Release();
+            }
+            SafeRelease(ref fr->IndexBufferHost);
+            fr->IndexBufferSize = draw_data.TotalIdxCount + 10000;
+
+            BufferDescriptor ib_desc = new()
+            {
+                Label = "Dear ImGui Index buffer",
+                Usage = BufferUsage.CopyDst | BufferUsage.Index,
+                Size = Align((ulong)fr->IndexBufferSize * sizeof(ushort), 4),
+                MappedAtCreation = false
+            };
+            fr->IndexBuffer = bd->wgpuDevice.CreateBuffer(ib_desc);
+            if (BufferHandle.IsNull(fr->IndexBuffer))
+                return;
+
+            fr->IndexBufferHost = (ushort*)NativeMemory.Alloc((nuint)fr->IndexBufferSize, sizeof(ushort));
+        }
+
+        // Upload vertex/index data into a single contiguous GPU buffer
+        ImDrawVert* vtx_dst = fr->VertexBufferHost;
+        ushort* idx_dst = fr->IndexBufferHost;
+
+        for (int n = 0; n < draw_data.CmdListsCount; n++)
+        {
+            ImDrawListPtr cmd_list = draw_data.CmdLists[n];
+            Unsafe.CopyBlock(vtx_dst, (void*)cmd_list.VtxBuffer.Data, (uint)cmd_list.VtxBuffer.Size * (uint)sizeof(ImDrawVert));
+            Unsafe.CopyBlock(idx_dst, (void*)cmd_list.IdxBuffer.Data, (uint)cmd_list.IdxBuffer.Size * sizeof(ushort));
+
+            vtx_dst += cmd_list.VtxBuffer.Size;
+            idx_dst += cmd_list.IdxBuffer.Size;
+        }
+        long vb_write_size = Align((byte*)vtx_dst - (byte*)fr->VertexBufferHost, 4);
+        long ib_write_size = Align((byte*)idx_dst - (byte*)fr->IndexBufferHost, 4);
+        bd->defaultQueue.WriteBuffer(fr->VertexBuffer, 0, (void*)fr->VertexBufferHost, (nuint)vb_write_size);
+        bd->defaultQueue.WriteBuffer(fr->IndexBuffer, 0, (void*)fr->IndexBufferHost, (nuint)ib_write_size);
+
+        // Setup desired render state
+        ImGui_ImplWGPU_SetupRenderState(draw_data, passEncoder, ref *fr);
+
+        // Render command lists
+        // (Because we merged all buffers into a single one, we maintain our own offset into them)
+        int global_vtx_offset = 0;
+        int global_idx_offset = 0;
+        Vector2 clip_scale = draw_data.FramebufferScale;
+        Vector2 clip_off = draw_data.DisplayPos;
+        for (int n = 0; n < draw_data.CmdListsCount; n++)
+        {
+            ImDrawListPtr cmdList = draw_data.CmdLists[n];
+            for (int cmd_i = 0; cmd_i < cmdList.CmdBuffer.Size; cmd_i++)
+            {
+                ImDrawCmdPtr pcmd = cmdList.CmdBuffer[cmd_i];
+                if (pcmd.UserCallback != IntPtr.Zero)
+                {
+                    // User callback, registered via ImDrawList::AddCallback()
+                    // (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
+                    const nint ImDrawCallback_ResetRenderState = -1;
+                    if (pcmd.UserCallback == ImDrawCallback_ResetRenderState)
+                    {
+                        ImGui_ImplWGPU_SetupRenderState(draw_data, passEncoder, ref *fr);
+                    }
+                    else
+                    {
+                        var callback = (delegate* unmanaged[Cdecl]<ImDrawList*, ImDrawCmd*, void>)pcmd.UserCallback;
+                        callback(cmdList.NativePtr, pcmd.NativePtr);
+                    }
+                }
+                else
+                {
+                    // Bind custom texture
+                    nint tex_id = pcmd.GetTexID();
+                    uint tex_id_hash = ImGuiHash.ImHashData((void*)tex_id, (nuint)sizeof(nint));
+                    var bind_group = bd->renderResources.ImageBindGroups.GetVoidPtr(tex_id_hash);
+                    if (bind_group != null)
+                    {
+                        passEncoder.SetBindGroup(1, new BindGroupHandle((nuint)bind_group), 0, null);
+                    }
+                    else
+                    {
+                        BindGroupHandle image_bind_group = ImGui_ImplWGPU_CreateImageBindGroup(bd->renderResources.ImageBindGroupLayout, new TextureViewHandle((nuint)tex_id));
+                        bd->renderResources.ImageBindGroups.SetVoidPtr(tex_id_hash, (void*)image_bind_group.GetAddress());
+                        passEncoder.SetBindGroup(1, image_bind_group, 0, null);
+                    }
+
+                    // Project scissor/clipping rectangles into framebuffer space
+                    Vector2 clip_min = new((pcmd.ClipRect.X - clip_off.X) * clip_scale.X, (pcmd.ClipRect.Y - clip_off.Y) * clip_scale.Y);
+                    Vector2 clip_max = new((pcmd.ClipRect.Z - clip_off.X) * clip_scale.X, (pcmd.ClipRect.W - clip_off.Y) * clip_scale.Y);
+                    if (clip_max.X <= clip_min.X || clip_max.Y <= clip_min.Y)
+                    {
+                        continue;
+                    }
+                    
+                    // Apply scissor/clipping rectangle, Draw
+                    passEncoder.SetScissorRect((uint)clip_min.X, (uint)clip_min.Y, (uint)(clip_max.X - clip_min.X), (uint)(clip_max.Y - clip_min.Y));
+                    passEncoder.DrawIndexed(pcmd.ElemCount, 1, (uint)(pcmd.IdxOffset + global_idx_offset), (int)(pcmd.VtxOffset + global_vtx_offset), 0);
+                }
+            }
+
+            global_idx_offset += cmdList.IdxBuffer.Size;
+            global_vtx_offset += cmdList.VtxBuffer.Size;
+        }
+    }
+
+    public static IntPtr GetImGuiTextureID(TextureView textureView)
+    {
+        return unchecked((IntPtr)(nint)GetHandle(textureView).GetAddress());
+    }
+
+    private static ImGui_ImplWGPU_Data? GetBackendData()
+    {
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        IntPtr userData = ImGui.GetIO().BackendRendererUserData;
+        if (userData == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        GCHandle handle = GCHandle.FromIntPtr(userData);
+        return handle.Target as ImGui_ImplWGPU_Data;
+    }
+
+    private static void ImGui_ImplWGPU_SetupRenderState(ImDrawDataPtr drawData, RenderPassEncoderHandle ctx, ref FrameResources fr)
+    {
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData()!;
+        // Setup orthographic projection matrix into our constant buffer
+        // Our visible imgui space lies from draw_data->DisplayPos (top left) to draw_data->DisplayPos+data_data->DisplaySize (bottom right).
+        {
+            float l = drawData.DisplayPos.X;
+            float r = drawData.DisplayPos.X + drawData.DisplaySize.X;
+            float t = drawData.DisplayPos.Y;
+            float b = drawData.DisplayPos.Y + drawData.DisplaySize.Y;
+
+            Matrix4x4 mvp = new(
+                2.0f / (r - l), 0.0f, 0.0f, 0.0f,
+                0.0f, 2.0f / (t - b), 0.0f, 0.0f,
+                0.0f, 0.0f, 0.5f, 0.0f,
+                (r + l) / (l - r), (t + b) / (b - t), 0.5f, 1.0f
+            );
+            bd->defaultQueue.WriteBuffer(bd->renderResources.Uniforms!, (ulong)Marshal.OffsetOf<Uniforms>(nameof(Uniforms.mvp)), &mvp, (nuint)sizeof(Matrix4x4));
+
+            float gamma;
+            switch (bd->renderTargetFormat)
+            {
+                case TextureFormat.ASTC10x10UnormSrgb:
+                case TextureFormat.ASTC10x5UnormSrgb:
+                case TextureFormat.ASTC10x6UnormSrgb:
+                case TextureFormat.ASTC10x8UnormSrgb:
+                case TextureFormat.ASTC12x10UnormSrgb:
+                case TextureFormat.ASTC12x12UnormSrgb:
+                case TextureFormat.ASTC4x4UnormSrgb:
+                case TextureFormat.ASTC5x5UnormSrgb:
+                case TextureFormat.ASTC6x5UnormSrgb:
+                case TextureFormat.ASTC6x6UnormSrgb:
+                case TextureFormat.ASTC8x5UnormSrgb:
+                case TextureFormat.ASTC8x6UnormSrgb:
+                case TextureFormat.ASTC8x8UnormSrgb:
+                case TextureFormat.BC1RGBAUnormSrgb:
+                case TextureFormat.BC2RGBAUnormSrgb:
+                case TextureFormat.BC3RGBAUnormSrgb:
+                case TextureFormat.BC7RGBAUnormSrgb:
+                case TextureFormat.BGRA8UnormSrgb:
+                case TextureFormat.ETC2RGB8A1UnormSrgb:
+                case TextureFormat.ETC2RGB8UnormSrgb:
+                case TextureFormat.ETC2RGBA8UnormSrgb:
+                case TextureFormat.RGBA8UnormSrgb:
+                    gamma = 2.2f;
+                    break;
+                default:
+                    gamma = 1.0f;
+                    break;
+            }
+
+            bd->defaultQueue.WriteBuffer(bd->renderResources.Uniforms!, (ulong)Marshal.OffsetOf<Uniforms>(nameof(Uniforms.gamma)), &gamma, sizeof(float));
+        }
+
+        // Setup viewport
+        ctx.SetViewport(0, 0, drawData.FramebufferScale.X * drawData.DisplaySize.X, drawData.FramebufferScale.Y * drawData.DisplaySize.Y, 0, 1);
+
+        // Bind shader and vertex buffers
+        ctx.SetVertexBuffer(0, fr.VertexBuffer!, 0, (ulong)fr.VertexBufferSize * (ulong)sizeof(ImDrawVert));
+        ctx.SetIndexBuffer(fr.IndexBuffer!, IndexFormat.Uint16, 0, (ulong)fr.IndexBufferSize * sizeof(ushort));
+        ctx.SetPipeline(bd->pipelineState!);
+        ctx.SetBindGroup(0, bd->renderResources.CommonBindGroup!, 0, null);
+
+        // Setup blend factor
+        ctx.SetBlendConstant(new Color(0, 0, 0, 0));
+
+    }
+
+    private static void ImGui_ImplWGPU_CreateFontsTexture()
+    {
+        // Build texture atlas
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+        ref ImGuiIO io = ref *ImGui.GetIO().NativePtr;
+        new ImFontAtlasPtr(io.Fonts).GetTexDataAsRGBA32(out byte* pixels, out int width, out int height, out int size_pp);
+
+        // Upload texture to graphics system
+        {
+            TextureDescriptor tex_desc = new()
+            {
+                Label = "Dear ImGui Font Texture",
+                Dimension = TextureDimension.D2,
+                Size = new((uint)width, (uint)height, 1),
+                SampleCount = 1,
+                Format = TextureFormat.RGBA8Unorm,
+                MipLevelCount = 1,
+                Usage = TextureUsage.CopyDst | TextureUsage.TextureBinding,
+            };
+            bd->renderResources.FontTexture = bd->wgpuDevice.CreateTexture(tex_desc);
+
+            TextureViewDescriptor textureViewDescriptor = new()
+            {
+                Format = TextureFormat.RGBA8Unorm,
+                Dimension = TextureViewDimension.D2,
+                BaseMipLevel = 0,
+                MipLevelCount = 1,
+                BaseArrayLayer = 0,
+                ArrayLayerCount = 1,
+                Aspect = TextureAspect.All,
+            };
+            bd->renderResources.FontTextureView = bd->renderResources.FontTexture.CreateView(textureViewDescriptor);
+        }
+
+        // Upload texture data
+        {
+            TexelCopyTextureInfoFFI dst_view = new()
+            {
+                Texture = bd->renderResources.FontTexture,
+                MipLevel = 0,
+                Origin = new(0, 0, 0),
+                Aspect = TextureAspect.All,
+            };
+            TexelCopyBufferLayout layout = new()
+            {
+                Offset = 0,
+                BytesPerRow = (uint)(width * size_pp),
+                RowsPerImage = (uint)height,
+            };
+            Extent3D size = new((uint)width, (uint)height, 1);
+            bd->defaultQueue.WriteTexture(dst_view, new ReadOnlySpan<byte>(pixels, width * size_pp * height), layout, size);
+        }
+
+        // Create the associated sampler
+        // (Bilinear sampling is required by default. Set 'io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines' or 'style.AntiAliasedLinesUseTex = false' to allow point/nearest sampling)
+        {
+            SamplerDescriptorFFI sampler_desc = new()
+            {
+                MinFilter = FilterMode.Linear,
+                MagFilter = FilterMode.Linear,
+                MipmapFilter = MipmapFilterMode.Linear,
+                AddressModeU = AddressMode.Repeat,
+                AddressModeV = AddressMode.Repeat,
+                AddressModeW = AddressMode.Repeat,
+                MaxAnisotropy = 1,
+            };
+            bd->renderResources.Sampler = bd->wgpuDevice.CreateSampler(&sampler_desc);
+        }
+
+        // Store our identifier
+        new ImFontAtlasPtr(io.Fonts).SetTexID((nint)bd->renderResources.FontTextureView.GetAddress());
+    }
+
+    private static void CreateUniformBuffer()
+    {
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData()!;
+        bd->renderResources.Uniforms = bd->wgpuDevice.CreateBuffer(new BufferDescriptor()
+        {
+            Label = "Dear ImGui Uniform buffer"u8,
+            Usage = BufferUsage.CopyDst | BufferUsage.Uniform,
+            Size = Align((ulong)Unsafe.SizeOf<Uniforms>(), 16),
+            MappedAtCreation = false,
+        });
+    }
+
+    private static BindGroupHandle ImGui_ImplWGPU_CreateImageBindGroup(BindGroupLayoutHandle layout, TextureViewHandle texture)
+    {
+        ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+        BindGroupEntryFFI image_bg_entries =
+        new BindGroupEntryFFI()
+        {
+            NextInChain = null,
+            Binding = 0,
+            Buffer = BufferHandle.Null,
+            Offset = 0,
+            Size = 0,
+            TextureView = texture,
+        };
+
+        BindGroupDescriptorFFI image_bg_descriptor = new()
+        {
+            Layout = layout,
+            EntryCount = 1,
+            Entries = &image_bg_entries,
+        };
+        return bd->wgpuDevice.CreateBindGroup(&image_bg_descriptor);
+    }
+
+    private static BindGroup GetOrCreateImageBindGroup(IntPtr textureId)
+    {
+        var bd = GetBackendData()!;
+        if (textureId == IntPtr.Zero)
+        {
+            return bd.RenderResources.ImageBindGroup!;
+        }
+
+        uint key = GetTextureHash(textureId);
+        if (bd.RenderResources.ImageBindGroups!.TryGetValue(key, out ImageBindGroupEntry cacheEntry))
+        {
+            return cacheEntry.BindGroup!;
+        }
+
+        TextureViewHandle textureViewHandle = TextureViewHandle.UnsafeFromPointer(unchecked((nuint)textureId.ToPointer()));
+        TextureView textureView = textureViewHandle.ToSafeHandle() ?? throw new InvalidOperationException("Invalid texture view handle in ImTextureID.");
+        BindGroup bindGroup = CreateImageBindGroup(bd.RenderResources.ImageBindGroupLayout!, textureView);
+        bd.RenderResources.ImageBindGroups[key] = new ImageBindGroupEntry
+        {
+            TextureView = textureView,
+            BindGroup = bindGroup,
+        };
+        return bindGroup;
+    }
+
+    private static void SafeRelease(ref RenderResources res)
+    {
+        if (res.FontTexture != null)
+        {
+            res.FontTexture.Destroy();
+        }
+
+        res.FontTexture = null;
+        res.FontTextureView = null;
+        res.Sampler = null;
+        res.Uniforms = null;
+        res.CommonBindGroup = null;
+        res.ImageBindGroup = null;
+        res.ImageBindGroupLayout = null;
+        res.ImageBindGroups?.Clear();
+    }
+
+    private static void ResetFrameResources(ref FrameResources res)
+    {
+        res.IndexBuffer = null;
+        res.VertexBuffer = null;
+        res.IndexBufferHost = null;
+        res.VertexBufferHost = null;
+        res.IndexBufferSize = 10000;
+        res.VertexBufferSize = 5000;
+    }
+
+    private static void SafeRelease(ref FrameResources res)
+    {
+        if (res.IndexBuffer != null)
+        {
+            res.IndexBuffer.Destroy();
+        }
+
+        if (res.VertexBuffer != null)
+        {
+            res.VertexBuffer.Destroy();
+        }
+
+        res.IndexBuffer = null;
+        res.VertexBuffer = null;
+        SafeRelease(ref res.IndexBufferHost);
+        SafeRelease(ref res.VertexBufferHost);
+        res.IndexBufferSize = 0;
+        res.VertexBufferSize = 0;
+    }
+
+    private static void SafeRelease(ref ushort* ptr)
+    {
+        if (ptr != null)
+        {
+            NativeMemory.Free(ptr);
+            ptr = null;
+        }
+    }
+
+    private static void SafeRelease(ref ImDrawVert* ptr)
+    {
+        if (ptr != null)
+        {
+            NativeMemory.Free(ptr);
+            ptr = null;
+        }
+    }
+
+    private static ulong Align(ulong size, ulong align)
+    {
+        return (size + (align - 1)) & ~(align - 1);
+    }
+
+    private static long Align(long size, long align)
+    {
+        return (size + (align - 1)) & ~(align - 1);
+    }
+
+    private static float GetGamma(TextureFormat format)
+    {
+        return format.ToString().EndsWith("Srgb", StringComparison.Ordinal) ? 2.2f : 1.0f;
+    }
+
+    private static uint GetTextureHash(IntPtr textureId)
+    {
+        nint textureValue = textureId;
+        return ImHashData(&textureValue, (nuint)sizeof(nint));
+    }
+
+    private static uint ImHashData(void* data, nuint dataSize, uint seed = 0)
+    {
+        uint crc = ~seed;
+        byte* bytes = (byte*)data;
+
+        for (nuint i = 0; i < dataSize; i++)
+        {
+            crc = (crc >> 8) ^ s_crc32LookupTable[(int)((crc & 0xFF) ^ bytes[i])];
+        }
+
+        return ~crc;
+    }
 }
-";
-
-	private const string ShaderFragWgsl = @"
-struct VertexOutput {
-	@builtin(position) position: vec4<f32>,
-	@location(0) color: vec4<f32>,
-	@location(1) uv: vec2<f32>,
-};
-
-struct Uniforms {
-	mvp: mat4x4<f32>,
-	gamma: f32,
-};
-
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var s: sampler;
-@group(1) @binding(0) var t: texture_2d<f32>;
-
-@fragment
-fn main(in: VertexOutput) -> @location(0) vec4<f32> {
-	let color = in.color * textureSample(t, s, in.uv);
-	let corrected_color = pow(color.rgb, vec3<f32>(uniforms.gamma));
-	return vec4<f32>(corrected_color, color.a);
-}
-";
-
-	public struct ImGui_ImplWGPU_InitInfo
-	{
-		public required Device device;
-		public required int num_frames_in_flight;
-		public required TextureFormat rt_format;
-		public TextureFormat depth_format;
-	}
-
-	private struct ImageBindGroupEntry
-	{
-		public TextureView? TextureView;
-		public BindGroup? BindGroup;
-	}
-
-	private struct RenderResources
-	{
-		public Texture? FontTexture;
-		public TextureView? FontTextureView;
-		public Sampler? Sampler;
-		public Buffer? Uniforms;
-		public BindGroup? CommonBindGroup;
-		public Dictionary<uint, ImageBindGroupEntry>? ImageBindGroups;
-		public BindGroup? ImageBindGroup;
-		public BindGroupLayout? ImageBindGroupLayout;
-	}
-
-	private struct FrameResources
-	{
-		public Buffer? IndexBuffer;
-		public Buffer? VertexBuffer;
-		public ushort* IndexBufferHost;
-		public ImDrawVert* VertexBufferHost;
-		public int IndexBufferSize;
-		public int VertexBufferSize;
-	}
-
-	[StructLayout(LayoutKind.Sequential)]
-	private unsafe struct Uniforms
-	{
-		public fixed float MVP[16];
-		public float Gamma;
-		private fixed float Padding[3];
-	}
-
-	private sealed class ImGui_ImplWGPU_Data
-	{
-		public required Device Device;
-		public required Queue DefaultQueue;
-		public TextureFormat RenderTargetFormat = TextureFormat.Undefined;
-		public TextureFormat DepthStencilFormat = TextureFormat.Undefined;
-		public RenderPipeline? PipelineState;
-		public RenderResources RenderResources;
-		public FrameResources[] FrameResources = [];
-		public int NumFramesInFlight;
-		public uint FrameIndex = uint.MaxValue;
-		public GCHandle Handle;
-	}
-
-	public static bool Init(ImGui_ImplWGPU_InitInfo initInfo)
-	{
-		if (initInfo.num_frames_in_flight <= 0)
-		{
-			throw new ArgumentOutOfRangeException(nameof(initInfo.num_frames_in_flight), "num_frames_in_flight must be greater than zero.");
-		}
-
-		var io = ImGui.GetIO();
-		if (io.BackendRendererUserData != IntPtr.Zero)
-		{
-			throw new InvalidOperationException("Renderer backend already initialized.");
-		}
-
-		var bd = new ImGui_ImplWGPU_Data
-		{
-			Device = initInfo.device,
-			DefaultQueue = initInfo.device.GetQueue(),
-			RenderTargetFormat = initInfo.rt_format,
-			DepthStencilFormat = initInfo.depth_format,
-			NumFramesInFlight = initInfo.num_frames_in_flight,
-			FrameIndex = uint.MaxValue,
-			FrameResources = new FrameResources[initInfo.num_frames_in_flight],
-			RenderResources = new RenderResources
-			{
-				ImageBindGroups = new Dictionary<uint, ImageBindGroupEntry>(100),
-			},
-		};
-
-		for (int i = 0; i < bd.FrameResources.Length; i++)
-		{
-			ResetFrameResources(ref bd.FrameResources[i]);
-		}
-
-		bd.Handle = GCHandle.Alloc(bd);
-
-		io.BackendRendererUserData = GCHandle.ToIntPtr(bd.Handle);
-		io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
-		io.NativePtr->BackendRendererName = (byte*)s_backendName;
-
-		return true;
-	}
-
-	public static void Shutdown()
-	{
-		var bd = GetBackendData();
-		if (bd == null)
-		{
-			throw new InvalidOperationException("No renderer backend to shutdown, or already shutdown.");
-		}
-
-		var io = ImGui.GetIO();
-		InvalidateDeviceObjects();
-
-		if (bd.Handle.IsAllocated)
-		{
-			bd.Handle.Free();
-		}
-
-		io.NativePtr->BackendRendererName = null;
-		io.NativePtr->BackendRendererUserData = null;
-		io.BackendFlags &= ~ImGuiBackendFlags.RendererHasVtxOffset;
-	}
-
-	public static void NewFrame()
-	{
-		var bd = GetBackendData();
-		if (bd == null)
-		{
-			throw new InvalidOperationException("Renderer backend is not initialized.");
-		}
-
-		if (bd.PipelineState == null)
-		{
-			if (!CreateDeviceObjects())
-			{
-				throw new InvalidOperationException("Failed to create ImGui WebGPU device objects.");
-			}
-		}
-	}
-
-	public static bool CreateDeviceObjects()
-	{
-		var bd = GetBackendData();
-		if (bd == null)
-		{
-			return false;
-		}
-
-		if (bd.PipelineState != null)
-		{
-			InvalidateDeviceObjects();
-		}
-
-		var commonBindGroupLayout = bd.Device.CreateBindGroupLayout(new()
-		{
-			Entries =
-			[
-				new()
-				{
-					Binding = 0,
-					Visibility = ShaderStage.Vertex | ShaderStage.Fragment,
-					Buffer = new() { Type = BufferBindingType.Uniform },
-				},
-				new()
-				{
-					Binding = 1,
-					Visibility = ShaderStage.Fragment,
-					Sampler = new() { Type = SamplerBindingType.Filtering },
-				},
-			],
-		});
-
-		var imageBindGroupLayout = bd.Device.CreateBindGroupLayout(new()
-		{
-			Entries =
-			[
-				new()
-				{
-					Binding = 0,
-					Visibility = ShaderStage.Fragment,
-					Texture = new()
-					{
-						SampleType = TextureSampleType.Float,
-						ViewDimension = TextureViewDimension.D2,
-					},
-				},
-			],
-		});
-
-		var pipelineLayout = bd.Device.CreatePipelineLayout(new()
-		{
-			BindGroupLayouts = [commonBindGroupLayout, imageBindGroupLayout],
-		});
-
-		var vertexShader = bd.Device.CreateShaderModuleWGSL(new() { Code = ShaderVertWgsl });
-		var fragmentShader = bd.Device.CreateShaderModuleWGSL(new() { Code = ShaderFragWgsl });
-
-		var colorBlend = new BlendComponent
-		{
-			Operation = BlendOperation.Add,
-			SrcFactor = BlendFactor.SrcAlpha,
-			DstFactor = BlendFactor.OneMinusSrcAlpha,
-		};
-		var alphaBlend = new BlendComponent
-		{
-			Operation = BlendOperation.Add,
-			SrcFactor = BlendFactor.One,
-			DstFactor = BlendFactor.OneMinusSrcAlpha,
-		};
-
-		DepthStencilState? depthStencil = null;
-		if (bd.DepthStencilFormat != TextureFormat.Undefined)
-		{
-			depthStencil = new DepthStencilState
-			{
-				Format = bd.DepthStencilFormat,
-				DepthWriteEnabled = OptionalBool.False,
-				DepthCompare = CompareFunction.Always,
-				StencilFront = new() { Compare = CompareFunction.Always },
-				StencilBack = new() { Compare = CompareFunction.Always },
-			};
-		}
-
-		bd.PipelineState = bd.Device.CreateRenderPipelineSync(new()
-		{
-			Layout = pipelineLayout,
-			Vertex = new()
-			{
-				Module = vertexShader,
-				EntryPoint = "main",
-				Buffers =
-				[
-					new VertexBufferLayout
-					{
-						ArrayStride = (ulong)Unsafe.SizeOf<ImDrawVert>(),
-						Attributes =
-						[
-							new VertexAttribute
-							{
-								Format = VertexFormat.Float32x2,
-								Offset = (ulong)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.pos)),
-								ShaderLocation = 0,
-							},
-							new VertexAttribute
-							{
-								Format = VertexFormat.Float32x2,
-								Offset = (ulong)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.uv)),
-								ShaderLocation = 1,
-							},
-							new VertexAttribute
-							{
-								Format = VertexFormat.Unorm8x4,
-								Offset = (ulong)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.col)),
-								ShaderLocation = 2,
-							},
-						],
-					},
-				],
-			},
-			Primitive = new()
-			{
-				Topology = PrimitiveTopology.TriangleList,
-				StripIndexFormat = IndexFormat.Undefined,
-				FrontFace = FrontFace.CW,
-				CullMode = CullMode.None,
-			},
-			DepthStencil = depthStencil,
-			Multisample = new()
-			{
-				Count = 1,
-				Mask = uint.MaxValue,
-				AlphaToCoverageEnabled = false,
-			},
-			Fragment = new()
-			{
-				Module = fragmentShader,
-				EntryPoint = "main",
-				Targets =
-				[
-					new ColorTargetState
-					{
-						Format = bd.RenderTargetFormat,
-						Blend = new BlendState
-						{
-							Color = colorBlend,
-							Alpha = alphaBlend,
-						},
-						WriteMask = ColorWriteMask.All,
-					},
-				],
-			},
-		});
-
-		CreateFontsTexture();
-		CreateUniformBuffer();
-
-		bd.RenderResources.CommonBindGroup = bd.Device.CreateBindGroup(new()
-		{
-			Layout = commonBindGroupLayout,
-			Entries =
-			[
-				new()
-				{
-					Binding = 0,
-					Buffer = bd.RenderResources.Uniforms,
-					Size = Align((ulong)Unsafe.SizeOf<Uniforms>(), 16),
-				},
-				new()
-				{
-					Binding = 1,
-					Sampler = bd.RenderResources.Sampler,
-				},
-			],
-		});
-
-		bd.RenderResources.ImageBindGroup = CreateImageBindGroup(imageBindGroupLayout, bd.RenderResources.FontTextureView!);
-		bd.RenderResources.ImageBindGroupLayout = imageBindGroupLayout;
-		bd.RenderResources.ImageBindGroups!.Clear();
-		bd.RenderResources.ImageBindGroups[GetTextureHash(GetImGuiTextureID(bd.RenderResources.FontTextureView!))] = new ImageBindGroupEntry
-		{
-			TextureView = bd.RenderResources.FontTextureView,
-			BindGroup = bd.RenderResources.ImageBindGroup,
-		};
-
-		return true;
-	}
-
-	public static void InvalidateDeviceObjects()
-	{
-		var bd = GetBackendData();
-		if (bd == null)
-		{
-			return;
-		}
-
-		bd.PipelineState = null;
-		SafeRelease(ref bd.RenderResources);
-
-		var io = ImGui.GetIO();
-		io.Fonts.SetTexID(IntPtr.Zero);
-
-		for (int i = 0; i < bd.FrameResources.Length; i++)
-		{
-			SafeRelease(ref bd.FrameResources[i]);
-			ResetFrameResources(ref bd.FrameResources[i]);
-		}
-
-		bd.FrameIndex = uint.MaxValue;
-	}
-
-	public static void RenderDrawData(ImDrawDataPtr drawData, RenderPassEncoder passEncoder)
-	{
-		if (drawData.DisplaySize.X <= 0.0f || drawData.DisplaySize.Y <= 0.0f)
-		{
-			return;
-		}
-
-		var bd = GetBackendData();
-		if (bd == null)
-		{
-			throw new InvalidOperationException("Renderer backend is not initialized.");
-		}
-
-		if (bd.PipelineState == null)
-		{
-			if (!CreateDeviceObjects())
-			{
-				throw new InvalidOperationException("Failed to create ImGui WebGPU device objects.");
-			}
-		}
-
-		bd.FrameIndex = unchecked(bd.FrameIndex + 1);
-		ref FrameResources fr = ref bd.FrameResources[bd.FrameIndex % (uint)bd.NumFramesInFlight];
-
-		if (fr.VertexBuffer == null || fr.VertexBufferSize < drawData.TotalVtxCount)
-		{
-			fr.VertexBuffer?.Destroy();
-			SafeRelease(ref fr.VertexBufferHost);
-			fr.VertexBufferSize = drawData.TotalVtxCount + 5000;
-			fr.VertexBuffer = bd.Device.CreateBuffer(new()
-			{
-				Label = "Dear ImGui Vertex buffer",
-				Usage = BufferUsage.CopyDst | BufferUsage.Vertex,
-				Size = Align((ulong)fr.VertexBufferSize * (ulong)Unsafe.SizeOf<ImDrawVert>(), 4),
-				MappedAtCreation = false,
-			});
-			fr.VertexBufferHost = (ImDrawVert*)NativeMemory.Alloc((nuint)fr.VertexBufferSize, (nuint)Unsafe.SizeOf<ImDrawVert>());
-		}
-
-		if (fr.IndexBuffer == null || fr.IndexBufferSize < drawData.TotalIdxCount)
-		{
-			fr.IndexBuffer?.Destroy();
-			SafeRelease(ref fr.IndexBufferHost);
-			fr.IndexBufferSize = drawData.TotalIdxCount + 10000;
-			fr.IndexBuffer = bd.Device.CreateBuffer(new()
-			{
-				Label = "Dear ImGui Index buffer",
-				Usage = BufferUsage.CopyDst | BufferUsage.Index,
-				Size = Align((ulong)fr.IndexBufferSize * sizeof(ushort), 4),
-				MappedAtCreation = false,
-			});
-			fr.IndexBufferHost = (ushort*)NativeMemory.Alloc((nuint)fr.IndexBufferSize, sizeof(ushort));
-		}
-
-		ImDrawVert* vtxDst = fr.VertexBufferHost;
-		ushort* idxDst = fr.IndexBufferHost;
-
-		for (int n = 0; n < drawData.CmdListsCount; n++)
-		{
-			ImDrawListPtr cmdList = drawData.CmdLists[n];
-			int vertexBytes = cmdList.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>();
-			int indexBytes = cmdList.IdxBuffer.Size * sizeof(ushort);
-
-			global::System.Buffer.MemoryCopy((void*)cmdList.VtxBuffer.Data, vtxDst, vertexBytes, vertexBytes);
-			global::System.Buffer.MemoryCopy((void*)cmdList.IdxBuffer.Data, idxDst, indexBytes, indexBytes);
-
-			vtxDst += cmdList.VtxBuffer.Size;
-			idxDst += cmdList.IdxBuffer.Size;
-		}
-
-		bd.DefaultQueue.WriteBuffer(fr.VertexBuffer!, 0, new ReadOnlySpan<ImDrawVert>(fr.VertexBufferHost, drawData.TotalVtxCount));
-		bd.DefaultQueue.WriteBuffer(fr.IndexBuffer!, 0, new ReadOnlySpan<ushort>(fr.IndexBufferHost, drawData.TotalIdxCount));
-
-		SetupRenderState(drawData, GetHandle(passEncoder), ref fr);
-
-		int globalVtxOffset = 0;
-		int globalIdxOffset = 0;
-		var clipScale = drawData.FramebufferScale;
-		var clipOff = drawData.DisplayPos;
-		RenderPassEncoderHandle encoder = GetHandle(passEncoder);
-
-		for (int n = 0; n < drawData.CmdListsCount; n++)
-		{
-			ImDrawListPtr cmdList = drawData.CmdLists[n];
-			for (int cmdIndex = 0; cmdIndex < cmdList.CmdBuffer.Size; cmdIndex++)
-			{
-				ImDrawCmdPtr pcmd = cmdList.CmdBuffer[cmdIndex];
-				if (pcmd.UserCallback != IntPtr.Zero)
-				{
-					if (pcmd.UserCallback == s_resetRenderStateCallback)
-					{
-						SetupRenderState(drawData, encoder, ref fr);
-					}
-					else
-					{
-						var callback = (delegate* unmanaged[Cdecl]<ImDrawList*, ImDrawCmd*, void>)pcmd.UserCallback;
-						callback(cmdList.NativePtr, pcmd.NativePtr);
-					}
-				}
-				else
-				{
-					IntPtr textureId = pcmd.GetTexID();
-					BindGroup bindGroup = GetOrCreateImageBindGroup(textureId);
-					encoder.SetBindGroup(1, bindGroup);
-
-					var clipRect = pcmd.ClipRect;
-					float clipMinX = (clipRect.X - clipOff.X) * clipScale.X;
-					float clipMinY = (clipRect.Y - clipOff.Y) * clipScale.Y;
-					float clipMaxX = (clipRect.Z - clipOff.X) * clipScale.X;
-					float clipMaxY = (clipRect.W - clipOff.Y) * clipScale.Y;
-					if (clipMaxX <= clipMinX || clipMaxY <= clipMinY)
-					{
-						continue;
-					}
-
-					encoder.SetScissorRect(
-						(uint)clipMinX,
-						(uint)clipMinY,
-						(uint)(clipMaxX - clipMinX),
-						(uint)(clipMaxY - clipMinY));
-					encoder.DrawIndexed(
-						pcmd.ElemCount,
-						1,
-						pcmd.IdxOffset + (uint)globalIdxOffset,
-						unchecked((int)pcmd.VtxOffset + globalVtxOffset),
-						0);
-				}
-			}
-
-			globalIdxOffset += cmdList.IdxBuffer.Size;
-			globalVtxOffset += cmdList.VtxBuffer.Size;
-		}
-	}
-
-	public static IntPtr GetImGuiTextureID(TextureView textureView)
-	{
-		return unchecked((IntPtr)(nint)GetHandle(textureView).GetAddress());
-	}
-
-	private static ImGui_ImplWGPU_Data? GetBackendData()
-	{
-		if (ImGui.GetCurrentContext() == IntPtr.Zero)
-		{
-			return null;
-		}
-
-		IntPtr userData = ImGui.GetIO().BackendRendererUserData;
-		if (userData == IntPtr.Zero)
-		{
-			return null;
-		}
-
-		GCHandle handle = GCHandle.FromIntPtr(userData);
-		return handle.Target as ImGui_ImplWGPU_Data;
-	}
-
-	private static void SetupRenderState(ImDrawDataPtr drawData, RenderPassEncoderHandle encoder, ref FrameResources fr)
-	{
-		var bd = GetBackendData()!;
-
-		Uniforms uniforms = default;
-		float left = drawData.DisplayPos.X;
-		float right = drawData.DisplayPos.X + drawData.DisplaySize.X;
-		float top = drawData.DisplayPos.Y;
-		float bottom = drawData.DisplayPos.Y + drawData.DisplaySize.Y;
-
-		float* mvp = uniforms.MVP;
-		mvp[0] = 2.0f / (right - left);
-		mvp[1] = 0.0f;
-		mvp[2] = 0.0f;
-		mvp[3] = 0.0f;
-
-		mvp[4] = 0.0f;
-		mvp[5] = 2.0f / (top - bottom);
-		mvp[6] = 0.0f;
-		mvp[7] = 0.0f;
-
-		mvp[8] = 0.0f;
-		mvp[9] = 0.0f;
-		mvp[10] = 0.5f;
-		mvp[11] = 0.0f;
-
-		mvp[12] = (right + left) / (left - right);
-		mvp[13] = (top + bottom) / (bottom - top);
-		mvp[14] = 0.5f;
-		mvp[15] = 1.0f;
-
-		uniforms.Gamma = GetGamma(bd.RenderTargetFormat);
-		bd.DefaultQueue.WriteBuffer(bd.RenderResources.Uniforms!, 0, in uniforms);
-
-		encoder.SetViewport(
-			0,
-			0,
-			drawData.FramebufferScale.X * drawData.DisplaySize.X,
-			drawData.FramebufferScale.Y * drawData.DisplaySize.Y,
-			0,
-			1);
-
-		encoder.SetVertexBuffer(0, fr.VertexBuffer!, 0, (ulong)fr.VertexBufferSize * (ulong)Unsafe.SizeOf<ImDrawVert>());
-		encoder.SetIndexBuffer(fr.IndexBuffer!, IndexFormat.Uint16, 0, (ulong)fr.IndexBufferSize * sizeof(ushort));
-		encoder.SetPipeline(bd.PipelineState!);
-		encoder.SetBindGroup(0, bd.RenderResources.CommonBindGroup!);
-		encoder.SetBlendConstant(new Color(0, 0, 0, 0));
-	}
-
-	private static void CreateFontsTexture()
-	{
-		var bd = GetBackendData()!;
-		var io = ImGui.GetIO();
-		io.Fonts.GetTexDataAsRGBA32(out byte* pixels, out int width, out int height, out int bytesPerPixel);
-
-		bd.RenderResources.FontTexture = bd.Device.CreateTexture(new()
-		{
-			Label = "Dear ImGui Font Texture",
-			Dimension = TextureDimension.D2,
-			Size = new((uint)width, (uint)height, 1),
-			SampleCount = 1,
-			Format = TextureFormat.RGBA8Unorm,
-			MipLevelCount = 1,
-			Usage = TextureUsage.CopyDst | TextureUsage.TextureBinding,
-		});
-
-		bd.RenderResources.FontTextureView = bd.RenderResources.FontTexture.CreateView(new()
-		{
-			Format = TextureFormat.RGBA8Unorm,
-			Dimension = TextureViewDimension.D2,
-			BaseMipLevel = 0,
-			MipLevelCount = 1,
-			BaseArrayLayer = 0,
-			ArrayLayerCount = 1,
-			Aspect = TextureAspect.All,
-		});
-
-		bd.DefaultQueue.WriteTexture(
-			destination: new TexelCopyTextureInfo
-			{
-				Texture = bd.RenderResources.FontTexture,
-				MipLevel = 0,
-				Origin = new(0, 0, 0),
-				Aspect = TextureAspect.All,
-			},
-			data: new ReadOnlySpan<byte>(pixels, width * height * bytesPerPixel),
-			dataLayout: new TexelCopyBufferLayout
-			{
-				Offset = 0,
-				BytesPerRow = (uint)(width * bytesPerPixel),
-				RowsPerImage = (uint)height,
-			},
-			writeSize: new((uint)width, (uint)height, 1));
-
-		SamplerDescriptor samplerDesc = new()
-		{
-			MinFilter = FilterMode.Linear,
-			MagFilter = FilterMode.Linear,
-			MipmapFilter = MipmapFilterMode.Linear,
-			AddressModeU = AddressMode.Repeat,
-			AddressModeV = AddressMode.Repeat,
-			AddressModeW = AddressMode.Repeat,
-			MaxAnisotropy = 1,
-		};
-		bd.RenderResources.Sampler = bd.Device.CreateSampler(samplerDesc);
-
-		io.Fonts.SetTexID(GetImGuiTextureID(bd.RenderResources.FontTextureView));
-	}
-
-	private static void CreateUniformBuffer()
-	{
-		var bd = GetBackendData()!;
-		bd.RenderResources.Uniforms = bd.Device.CreateBuffer(new()
-		{
-			Label = "Dear ImGui Uniform buffer",
-			Usage = BufferUsage.CopyDst | BufferUsage.Uniform,
-			Size = Align((ulong)Unsafe.SizeOf<Uniforms>(), 16),
-			MappedAtCreation = false,
-		});
-	}
-
-	private static BindGroup CreateImageBindGroup(BindGroupLayout layout, TextureView textureView)
-	{
-		var bd = GetBackendData()!;
-		return bd.Device.CreateBindGroup(new()
-		{
-			Layout = layout,
-			Entries =
-			[
-				new()
-				{
-					Binding = 0,
-					TextureView = textureView,
-				},
-			],
-		});
-	}
-
-	private static BindGroup GetOrCreateImageBindGroup(IntPtr textureId)
-	{
-		var bd = GetBackendData()!;
-		if (textureId == IntPtr.Zero)
-		{
-			return bd.RenderResources.ImageBindGroup!;
-		}
-
-		uint key = GetTextureHash(textureId);
-		if (bd.RenderResources.ImageBindGroups!.TryGetValue(key, out ImageBindGroupEntry cacheEntry))
-		{
-			return cacheEntry.BindGroup!;
-		}
-
-		TextureViewHandle textureViewHandle = TextureViewHandle.UnsafeFromPointer(unchecked((nuint)textureId.ToPointer()));
-		TextureView textureView = textureViewHandle.ToSafeHandle() ?? throw new InvalidOperationException("Invalid texture view handle in ImTextureID.");
-		BindGroup bindGroup = CreateImageBindGroup(bd.RenderResources.ImageBindGroupLayout!, textureView);
-		bd.RenderResources.ImageBindGroups[key] = new ImageBindGroupEntry
-		{
-			TextureView = textureView,
-			BindGroup = bindGroup,
-		};
-		return bindGroup;
-	}
-
-	private static void SafeRelease(ref RenderResources res)
-	{
-		if (res.FontTexture != null)
-		{
-			res.FontTexture.Destroy();
-		}
-
-		res.FontTexture = null;
-		res.FontTextureView = null;
-		res.Sampler = null;
-		res.Uniforms = null;
-		res.CommonBindGroup = null;
-		res.ImageBindGroup = null;
-		res.ImageBindGroupLayout = null;
-		res.ImageBindGroups?.Clear();
-	}
-
-	private static void ResetFrameResources(ref FrameResources res)
-	{
-		res.IndexBuffer = null;
-		res.VertexBuffer = null;
-		res.IndexBufferHost = null;
-		res.VertexBufferHost = null;
-		res.IndexBufferSize = 10000;
-		res.VertexBufferSize = 5000;
-	}
-
-	private static void SafeRelease(ref FrameResources res)
-	{
-		if (res.IndexBuffer != null)
-		{
-			res.IndexBuffer.Destroy();
-		}
-
-		if (res.VertexBuffer != null)
-		{
-			res.VertexBuffer.Destroy();
-		}
-
-		res.IndexBuffer = null;
-		res.VertexBuffer = null;
-		SafeRelease(ref res.IndexBufferHost);
-		SafeRelease(ref res.VertexBufferHost);
-		res.IndexBufferSize = 0;
-		res.VertexBufferSize = 0;
-	}
-
-	private static void SafeRelease(ref ushort* ptr)
-	{
-		if (ptr != null)
-		{
-			NativeMemory.Free(ptr);
-			ptr = null;
-		}
-	}
-
-	private static void SafeRelease(ref ImDrawVert* ptr)
-	{
-		if (ptr != null)
-		{
-			NativeMemory.Free(ptr);
-			ptr = null;
-		}
-	}
-
-	private static ulong Align(ulong size, ulong align)
-	{
-		return (size + (align - 1)) & ~(align - 1);
-	}
-
-	private static float GetGamma(TextureFormat format)
-	{
-		return format.ToString().EndsWith("Srgb", StringComparison.Ordinal) ? 2.2f : 1.0f;
-	}
-
-	private static uint GetTextureHash(IntPtr textureId)
-	{
-		nint textureValue = textureId;
-		return ImHashData(&textureValue, (nuint)sizeof(nint));
-	}
-
-	private static uint ImHashData(void* data, nuint dataSize, uint seed = 0)
-	{
-		uint crc = ~seed;
-		byte* bytes = (byte*)data;
-
-		for (nuint i = 0; i < dataSize; i++)
-		{
-			crc = (crc >> 8) ^ s_crc32LookupTable[(int)((crc & 0xFF) ^ bytes[i])];
-		}
-
-		return ~crc;
-	}
-}
+
+
+// // dear imgui: Renderer for WebGPU
+// // This needs to be used along with a Platform Binding (e.g. GLFW)
+// // (Please note that WebGPU is currently experimental, will not run on non-beta browsers, and may break.)
+
+// // Implemented features:
+// //  [X] Renderer: User texture binding. Use 'WGPUTextureView' as ImTextureID. Read the FAQ about ImTextureID!
+// //  [X] Renderer: Large meshes support (64k+ vertices) with 16-bit indices.
+
+// // You can use unmodified imgui_impl_* files in your project. See examples/ folder for examples of using this.
+// // Prefer including the entire imgui/ repository into your project (either as a copy or as a submodule), and only build the backends you need.
+// // If you are new to Dear ImGui, read documentation from the docs/ folder + read the top of imgui.cpp.
+// // Read online: https://github.com/ocornut/imgui/tree/master/docs
+
+// // CHANGELOG
+// // (minor and older changes stripped away, please see git history for details)
+// //  2023-07-13: Use WGPUShaderModuleWGSLDescriptor's code instead of source. use WGPUMipmapFilterMode_Linear instead of WGPUFilterMode_Linear. (#6602)
+// //  2023-04-11: Align buffer sizes. Use WGSL shaders instead of precompiled SPIR-V.
+// //  2023-04-11: Reorganized backend to pull data from a single structure to facilitate usage with multiple-contexts (all g_XXXX access changed to bd->XXXX).
+// //  2023-01-25: Revert automatic pipeline layout generation (see https://github.com/gpuweb/gpuweb/issues/2470)
+// //  2022-11-24: Fixed validation error with default depth buffer settings.
+// //  2022-11-10: Fixed rendering when a depth buffer is enabled. Added 'WGPUTextureFormat depth_format' parameter to ImGui_ImplWGPU_Init().
+// //  2022-10-11: Using 'nullptr' instead of 'NULL' as per our switch to C++11.
+// //  2021-11-29: Passing explicit buffer sizes to wgpuRenderPassEncoderSetVertexBuffer()/wgpuRenderPassEncoderSetIndexBuffer().
+// //  2021-08-24: Fixed for latest specs.
+// //  2021-05-24: Add support for draw_data->FramebufferScale.
+// //  2021-05-19: Replaced direct access to ImDrawCmd::TextureId with a call to ImDrawCmd::GetTexID(). (will become a requirement)
+// //  2021-05-16: Update to latest WebGPU specs (compatible with Emscripten 2.0.20 and Chrome Canary 92).
+// //  2021-02-18: Change blending equation to preserve alpha in output buffer.
+// //  2021-01-28: Initial version.
+
+// #include "imgui.h"
+// #ifndef IMGUI_DISABLE
+// #include "imgui_impl_wgpu.h"
+// #include <limits.h>
+// #include <webgpu/webgpu.h>
+
+// // Dear ImGui prototypes from imgui_internal.h
+// extern ImGuiID ImHashData(const void* data_p, size_t data_size, ImU32 seed = 0);
+// #define MEMALIGN(_SIZE,_ALIGN)        (((_SIZE) + ((_ALIGN) - 1)) & ~((_ALIGN) - 1))    // Memory align (copied from IM_ALIGN() macro).
+
+// // WebGPU data
+// struct RenderResources
+// {
+//     WGPUTexture         FontTexture = nullptr;          // Font texture
+//     WGPUTextureView     FontTextureView = nullptr;      // Texture view for font texture
+//     WGPUSampler         Sampler = nullptr;              // Sampler for the font texture
+//     WGPUBuffer          Uniforms = nullptr;             // Shader uniforms
+//     WGPUBindGroup       CommonBindGroup = nullptr;      // Resources bind-group to bind the common resources to pipeline
+//     ImGuiStorage        ImageBindGroups;                // Resources bind-group to bind the font/image resources to pipeline (this is a key->value map)
+//     WGPUBindGroup       ImageBindGroup = nullptr;       // Default font-resource of Dear ImGui
+//     WGPUBindGroupLayout ImageBindGroupLayout = nullptr; // Cache layout used for the image bind group. Avoids allocating unnecessary JS objects when working with WebASM
+// };
+
+// struct FrameResources
+// {
+//     WGPUBuffer  IndexBuffer;
+//     WGPUBuffer  VertexBuffer;
+//     ImDrawIdx*  IndexBufferHost;
+//     ImDrawVert* VertexBufferHost;
+//     int         IndexBufferSize;
+//     int         VertexBufferSize;
+// };
+
+// struct Uniforms
+// {
+//     float MVP[4][4];
+//     float Gamma;
+// };
+
+// struct ImGui_ImplWGPU_Data
+// {
+//     WGPUDevice          wgpuDevice = nullptr;
+//     WGPUQueue           defaultQueue = nullptr;
+//     WGPUTextureFormat   renderTargetFormat = WGPUTextureFormat_Undefined;
+//     WGPUTextureFormat   depthStencilFormat = WGPUTextureFormat_Undefined;
+//     WGPURenderPipeline  pipelineState = nullptr;
+
+//     RenderResources     renderResources;
+//     FrameResources*     pFrameResources = nullptr;
+//     unsigned int        numFramesInFlight = 0;
+//     unsigned int        frameIndex = UINT_MAX;
+// };
+
+// // Backend data stored in io.BackendRendererUserData to allow support for multiple Dear ImGui contexts
+// // It is STRONGLY preferred that you use docking branch with multi-viewports (== single Dear ImGui context + multiple windows) instead of multiple Dear ImGui contexts.
+// static ImGui_ImplWGPU_Data* ImGui_ImplWGPU_GetBackendData()
+// {
+//     return ImGui::GetCurrentContext() ? (ImGui_ImplWGPU_Data*)ImGui::GetIO().BackendRendererUserData : nullptr;
+// }
+
+// //-----------------------------------------------------------------------------
+// // SHADERS
+// //-----------------------------------------------------------------------------
+
+// static const char __shader_vert_wgsl[] = R"(
+// struct VertexInput {
+//     @location(0) position: vec2<f32>,
+//     @location(1) uv: vec2<f32>,
+//     @location(2) color: vec4<f32>,
+// };
+
+// struct VertexOutput {
+//     @builtin(position) position: vec4<f32>,
+//     @location(0) color: vec4<f32>,
+//     @location(1) uv: vec2<f32>,
+// };
+
+// struct Uniforms {
+//     mvp: mat4x4<f32>,
+//     gamma: f32,
+// };
+
+// @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+// @vertex
+// fn main(in: VertexInput) -> VertexOutput {
+//     var out: VertexOutput;
+//     out.position = uniforms.mvp * vec4<f32>(in.position, 0.0, 1.0);
+//     out.color = in.color;
+//     out.uv = in.uv;
+//     return out;
+// }
+// )";
+
+// static const char __shader_frag_wgsl[] = R"(
+// struct VertexOutput {
+//     @builtin(position) position: vec4<f32>,
+//     @location(0) color: vec4<f32>,
+//     @location(1) uv: vec2<f32>,
+// };
+
+// struct Uniforms {
+//     mvp: mat4x4<f32>,
+//     gamma: f32,
+// };
+
+// @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+// @group(0) @binding(1) var s: sampler;
+// @group(1) @binding(0) var t: texture_2d<f32>;
+
+// @fragment
+// fn main(in: VertexOutput) -> @location(0) vec4<f32> {
+//     let color = in.color * textureSample(t, s, in.uv);
+//     let corrected_color = pow(color.rgb, vec3<f32>(uniforms.gamma));
+//     return vec4<f32>(corrected_color, color.a);
+// }
+// )";
+
+// static void SafeRelease(ImDrawIdx*& res)
+// {
+//     if (res)
+//         delete[] res;
+//     res = nullptr;
+// }
+// static void SafeRelease(ImDrawVert*& res)
+// {
+//     if (res)
+//         delete[] res;
+//     res = nullptr;
+// }
+// static void SafeRelease(WGPUBindGroupLayout& res)
+// {
+//     if (res)
+//         wgpuBindGroupLayoutRelease(res);
+//     res = nullptr;
+// }
+// static void SafeRelease(WGPUBindGroup& res)
+// {
+//     if (res)
+//         wgpuBindGroupRelease(res);
+//     res = nullptr;
+// }
+// static void SafeRelease(WGPUBuffer& res)
+// {
+//     if (res)
+//         wgpuBufferRelease(res);
+//     res = nullptr;
+// }
+// static void SafeRelease(WGPURenderPipeline& res)
+// {
+//     if (res)
+//         wgpuRenderPipelineRelease(res);
+//     res = nullptr;
+// }
+// static void SafeRelease(WGPUSampler& res)
+// {
+//     if (res)
+//         wgpuSamplerRelease(res);
+//     res = nullptr;
+// }
+// static void SafeRelease(WGPUShaderModule& res)
+// {
+//     if (res)
+//         wgpuShaderModuleRelease(res);
+//     res = nullptr;
+// }
+// static void SafeRelease(WGPUTextureView& res)
+// {
+//     if (res)
+//         wgpuTextureViewRelease(res);
+//     res = nullptr;
+// }
+// static void SafeRelease(WGPUTexture& res)
+// {
+//     if (res)
+//         wgpuTextureRelease(res);
+//     res = nullptr;
+// }
+
+// static void SafeRelease(RenderResources& res)
+// {
+//     SafeRelease(res.FontTexture);
+//     SafeRelease(res.FontTextureView);
+//     SafeRelease(res.Sampler);
+//     SafeRelease(res.Uniforms);
+//     SafeRelease(res.CommonBindGroup);
+//     SafeRelease(res.ImageBindGroup);
+//     SafeRelease(res.ImageBindGroupLayout);
+// };
+
+// static void SafeRelease(FrameResources& res)
+// {
+//     SafeRelease(res.IndexBuffer);
+//     SafeRelease(res.VertexBuffer);
+//     SafeRelease(res.IndexBufferHost);
+//     SafeRelease(res.VertexBufferHost);
+// }
+
+// static WGPUProgrammableStageDescriptor ImGui_ImplWGPU_CreateShaderModule(const char* wgsl_source)
+// {
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+
+//     WGPUShaderModuleWGSLDescriptor wgsl_desc = {};
+//     wgsl_desc.chain.sType = WGPUSType_ShaderModuleWGSLDescriptor;
+//     wgsl_desc.code = wgsl_source;
+
+//     WGPUShaderModuleDescriptor desc = {};
+//     desc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&wgsl_desc);
+
+//     WGPUProgrammableStageDescriptor stage_desc = {};
+//     stage_desc.module = wgpuDeviceCreateShaderModule(bd->wgpuDevice, &desc);
+//     stage_desc.entryPoint = "main";
+//     return stage_desc;
+// }
+
+// static WGPUBindGroup ImGui_ImplWGPU_CreateImageBindGroup(WGPUBindGroupLayout layout, WGPUTextureView texture)
+// {
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+//     WGPUBindGroupEntry image_bg_entries[] = { { nullptr, 0, 0, 0, 0, 0, texture } };
+
+//     WGPUBindGroupDescriptor image_bg_descriptor = {};
+//     image_bg_descriptor.layout = layout;
+//     image_bg_descriptor.entryCount = sizeof(image_bg_entries) / sizeof(WGPUBindGroupEntry);
+//     image_bg_descriptor.entries = image_bg_entries;
+//     return wgpuDeviceCreateBindGroup(bd->wgpuDevice, &image_bg_descriptor);
+// }
+
+// static void ImGui_ImplWGPU_SetupRenderState(ImDrawData* draw_data, WGPURenderPassEncoder ctx, FrameResources* fr)
+// {
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+
+//     // Setup orthographic projection matrix into our constant buffer
+//     // Our visible imgui space lies from draw_data->DisplayPos (top left) to draw_data->DisplayPos+data_data->DisplaySize (bottom right).
+//     {
+//         float L = draw_data->DisplayPos.x;
+//         float R = draw_data->DisplayPos.x + draw_data->DisplaySize.x;
+//         float T = draw_data->DisplayPos.y;
+//         float B = draw_data->DisplayPos.y + draw_data->DisplaySize.y;
+//         float mvp[4][4] =
+//         {
+//             { 2.0f/(R-L),   0.0f,           0.0f,       0.0f },
+//             { 0.0f,         2.0f/(T-B),     0.0f,       0.0f },
+//             { 0.0f,         0.0f,           0.5f,       0.0f },
+//             { (R+L)/(L-R),  (T+B)/(B-T),    0.5f,       1.0f },
+//         };
+//         wgpuQueueWriteBuffer(bd->defaultQueue, bd->renderResources.Uniforms, offsetof(Uniforms, MVP), mvp, sizeof(Uniforms::MVP));
+//         float gamma;
+//         switch (bd->renderTargetFormat)
+//         {
+//         case WGPUTextureFormat_ASTC10x10UnormSrgb:
+//         case WGPUTextureFormat_ASTC10x5UnormSrgb:
+//         case WGPUTextureFormat_ASTC10x6UnormSrgb:
+//         case WGPUTextureFormat_ASTC10x8UnormSrgb:
+//         case WGPUTextureFormat_ASTC12x10UnormSrgb:
+//         case WGPUTextureFormat_ASTC12x12UnormSrgb:
+//         case WGPUTextureFormat_ASTC4x4UnormSrgb:
+//         case WGPUTextureFormat_ASTC5x5UnormSrgb:
+//         case WGPUTextureFormat_ASTC6x5UnormSrgb:
+//         case WGPUTextureFormat_ASTC6x6UnormSrgb:
+//         case WGPUTextureFormat_ASTC8x5UnormSrgb:
+//         case WGPUTextureFormat_ASTC8x6UnormSrgb:
+//         case WGPUTextureFormat_ASTC8x8UnormSrgb:
+//         case WGPUTextureFormat_BC1RGBAUnormSrgb:
+//         case WGPUTextureFormat_BC2RGBAUnormSrgb:
+//         case WGPUTextureFormat_BC3RGBAUnormSrgb:
+//         case WGPUTextureFormat_BC7RGBAUnormSrgb:
+//         case WGPUTextureFormat_BGRA8UnormSrgb:
+//         case WGPUTextureFormat_ETC2RGB8A1UnormSrgb:
+//         case WGPUTextureFormat_ETC2RGB8UnormSrgb:
+//         case WGPUTextureFormat_ETC2RGBA8UnormSrgb:
+//         case WGPUTextureFormat_RGBA8UnormSrgb:
+//             gamma = 2.2f;
+//             break;
+//         default:
+//             gamma = 1.0f;
+//         }
+//         wgpuQueueWriteBuffer(bd->defaultQueue, bd->renderResources.Uniforms, offsetof(Uniforms, Gamma), &gamma, sizeof(Uniforms::Gamma));
+//     }
+
+//     // Setup viewport
+//     wgpuRenderPassEncoderSetViewport(ctx, 0, 0, draw_data->FramebufferScale.x * draw_data->DisplaySize.x, draw_data->FramebufferScale.y * draw_data->DisplaySize.y, 0, 1);
+
+//     // Bind shader and vertex buffers
+//     wgpuRenderPassEncoderSetVertexBuffer(ctx, 0, fr->VertexBuffer, 0, fr->VertexBufferSize * sizeof(ImDrawVert));
+//     wgpuRenderPassEncoderSetIndexBuffer(ctx, fr->IndexBuffer, sizeof(ImDrawIdx) == 2 ? WGPUIndexFormat_Uint16 : WGPUIndexFormat_Uint32, 0, fr->IndexBufferSize * sizeof(ImDrawIdx));
+//     wgpuRenderPassEncoderSetPipeline(ctx, bd->pipelineState);
+//     wgpuRenderPassEncoderSetBindGroup(ctx, 0, bd->renderResources.CommonBindGroup, 0, nullptr);
+
+//     // Setup blend factor
+//     WGPUColor blend_color = { 0.f, 0.f, 0.f, 0.f };
+//     wgpuRenderPassEncoderSetBlendConstant(ctx, &blend_color);
+// }
+
+// // Render function
+// // (this used to be set in io.RenderDrawListsFn and called by ImGui::Render(), but you can now call this directly from your main loop)
+// void ImGui_ImplWGPU_RenderDrawData(ImDrawData* draw_data, WGPURenderPassEncoder pass_encoder)
+// {
+//     // Avoid rendering when minimized
+//     if (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f)
+//         return;
+
+//     // FIXME: Assuming that this only gets called once per frame!
+//     // If not, we can't just re-allocate the IB or VB, we'll have to do a proper allocator.
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+//     bd->frameIndex = bd->frameIndex + 1;
+//     FrameResources* fr = &bd->pFrameResources[bd->frameIndex % bd->numFramesInFlight];
+
+//     // Create and grow vertex/index buffers if needed
+//     if (fr->VertexBuffer == nullptr || fr->VertexBufferSize < draw_data->TotalVtxCount)
+//     {
+//         if (fr->VertexBuffer)
+//         {
+//             wgpuBufferDestroy(fr->VertexBuffer);
+//             wgpuBufferRelease(fr->VertexBuffer);
+//         }
+//         SafeRelease(fr->VertexBufferHost);
+//         fr->VertexBufferSize = draw_data->TotalVtxCount + 5000;
+
+//         WGPUBufferDescriptor vb_desc =
+//         {
+//             nullptr,
+//             "Dear ImGui Vertex buffer",
+//             WGPUBufferUsage_CopyDst | WGPUBufferUsage_Vertex,
+//             MEMALIGN(fr->VertexBufferSize * sizeof(ImDrawVert), 4),
+//             false
+//         };
+//         fr->VertexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &vb_desc);
+//         if (!fr->VertexBuffer)
+//             return;
+
+//         fr->VertexBufferHost = new ImDrawVert[fr->VertexBufferSize];
+//     }
+//     if (fr->IndexBuffer == nullptr || fr->IndexBufferSize < draw_data->TotalIdxCount)
+//     {
+//         if (fr->IndexBuffer)
+//         {
+//             wgpuBufferDestroy(fr->IndexBuffer);
+//             wgpuBufferRelease(fr->IndexBuffer);
+//         }
+//         SafeRelease(fr->IndexBufferHost);
+//         fr->IndexBufferSize = draw_data->TotalIdxCount + 10000;
+
+//         WGPUBufferDescriptor ib_desc =
+//         {
+//             nullptr,
+//             "Dear ImGui Index buffer",
+//             WGPUBufferUsage_CopyDst | WGPUBufferUsage_Index,
+//             MEMALIGN(fr->IndexBufferSize * sizeof(ImDrawIdx), 4),
+//             false
+//         };
+//         fr->IndexBuffer = wgpuDeviceCreateBuffer(bd->wgpuDevice, &ib_desc);
+//         if (!fr->IndexBuffer)
+//             return;
+
+//         fr->IndexBufferHost = new ImDrawIdx[fr->IndexBufferSize];
+//     }
+
+//     // Upload vertex/index data into a single contiguous GPU buffer
+//     ImDrawVert* vtx_dst = (ImDrawVert*)fr->VertexBufferHost;
+//     ImDrawIdx* idx_dst = (ImDrawIdx*)fr->IndexBufferHost;
+//     for (int n = 0; n < draw_data->CmdListsCount; n++)
+//     {
+//         const ImDrawList* cmd_list = draw_data->CmdLists[n];
+//         memcpy(vtx_dst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
+//         memcpy(idx_dst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
+//         vtx_dst += cmd_list->VtxBuffer.Size;
+//         idx_dst += cmd_list->IdxBuffer.Size;
+//     }
+//     int64_t vb_write_size = MEMALIGN((char*)vtx_dst - (char*)fr->VertexBufferHost, 4);
+//     int64_t ib_write_size = MEMALIGN((char*)idx_dst - (char*)fr->IndexBufferHost, 4);
+//     wgpuQueueWriteBuffer(bd->defaultQueue, fr->VertexBuffer, 0, fr->VertexBufferHost, vb_write_size);
+//     wgpuQueueWriteBuffer(bd->defaultQueue, fr->IndexBuffer,  0, fr->IndexBufferHost,  ib_write_size);
+
+//     // Setup desired render state
+//     ImGui_ImplWGPU_SetupRenderState(draw_data, pass_encoder, fr);
+
+//     // Render command lists
+//     // (Because we merged all buffers into a single one, we maintain our own offset into them)
+//     int global_vtx_offset = 0;
+//     int global_idx_offset = 0;
+//     ImVec2 clip_scale = draw_data->FramebufferScale;
+//     ImVec2 clip_off = draw_data->DisplayPos;
+//     for (int n = 0; n < draw_data->CmdListsCount; n++)
+//     {
+//         const ImDrawList* cmd_list = draw_data->CmdLists[n];
+//         for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+//         {
+//             const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+//             if (pcmd->UserCallback != nullptr)
+//             {
+//                 // User callback, registered via ImDrawList::AddCallback()
+//                 // (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
+//                 if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
+//                     ImGui_ImplWGPU_SetupRenderState(draw_data, pass_encoder, fr);
+//                 else
+//                     pcmd->UserCallback(cmd_list, pcmd);
+//             }
+//             else
+//             {
+//                 // Bind custom texture
+//                 ImTextureID tex_id = pcmd->GetTexID();
+//                 ImGuiID tex_id_hash = ImHashData(&tex_id, sizeof(tex_id));
+//                 auto bind_group = bd->renderResources.ImageBindGroups.GetVoidPtr(tex_id_hash);
+//                 if (bind_group)
+//                 {
+//                     wgpuRenderPassEncoderSetBindGroup(pass_encoder, 1, (WGPUBindGroup)bind_group, 0, nullptr);
+//                 }
+//                 else
+//                 {
+//                     WGPUBindGroup image_bind_group = ImGui_ImplWGPU_CreateImageBindGroup(bd->renderResources.ImageBindGroupLayout, (WGPUTextureView)tex_id);
+//                     bd->renderResources.ImageBindGroups.SetVoidPtr(tex_id_hash, image_bind_group);
+//                     wgpuRenderPassEncoderSetBindGroup(pass_encoder, 1, image_bind_group, 0, nullptr);
+//                 }
+
+//                 // Project scissor/clipping rectangles into framebuffer space
+//                 ImVec2 clip_min((pcmd->ClipRect.x - clip_off.x) * clip_scale.x, (pcmd->ClipRect.y - clip_off.y) * clip_scale.y);
+//                 ImVec2 clip_max((pcmd->ClipRect.z - clip_off.x) * clip_scale.x, (pcmd->ClipRect.w - clip_off.y) * clip_scale.y);
+//                 if (clip_max.x <= clip_min.x || clip_max.y <= clip_min.y)
+//                     continue;
+
+//                 // Apply scissor/clipping rectangle, Draw
+//                 wgpuRenderPassEncoderSetScissorRect(pass_encoder, (uint32_t)clip_min.x, (uint32_t)clip_min.y, (uint32_t)(clip_max.x - clip_min.x), (uint32_t)(clip_max.y - clip_min.y));
+//                 wgpuRenderPassEncoderDrawIndexed(pass_encoder, pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
+//             }
+//         }
+//         global_idx_offset += cmd_list->IdxBuffer.Size;
+//         global_vtx_offset += cmd_list->VtxBuffer.Size;
+//     }
+// }
+
+// static void ImGui_ImplWGPU_CreateFontsTexture()
+// {
+//     // Build texture atlas
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+//     ImGuiIO& io = ImGui::GetIO();
+//     unsigned char* pixels;
+//     int width, height, size_pp;
+//     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height, &size_pp);
+
+//     // Upload texture to graphics system
+//     {
+//         WGPUTextureDescriptor tex_desc = {};
+//         tex_desc.label = "Dear ImGui Font Texture";
+//         tex_desc.dimension = WGPUTextureDimension_2D;
+//         tex_desc.size.width = width;
+//         tex_desc.size.height = height;
+//         tex_desc.size.depthOrArrayLayers = 1;
+//         tex_desc.sampleCount = 1;
+//         tex_desc.format = WGPUTextureFormat_RGBA8Unorm;
+//         tex_desc.mipLevelCount = 1;
+//         tex_desc.usage = WGPUTextureUsage_CopyDst | WGPUTextureUsage_TextureBinding;
+//         bd->renderResources.FontTexture = wgpuDeviceCreateTexture(bd->wgpuDevice, &tex_desc);
+
+//         WGPUTextureViewDescriptor tex_view_desc = {};
+//         tex_view_desc.format = WGPUTextureFormat_RGBA8Unorm;
+//         tex_view_desc.dimension = WGPUTextureViewDimension_2D;
+//         tex_view_desc.baseMipLevel = 0;
+//         tex_view_desc.mipLevelCount = 1;
+//         tex_view_desc.baseArrayLayer = 0;
+//         tex_view_desc.arrayLayerCount = 1;
+//         tex_view_desc.aspect = WGPUTextureAspect_All;
+//         bd->renderResources.FontTextureView = wgpuTextureCreateView(bd->renderResources.FontTexture, &tex_view_desc);
+//     }
+
+//     // Upload texture data
+//     {
+//         WGPUImageCopyTexture dst_view = {};
+//         dst_view.texture = bd->renderResources.FontTexture;
+//         dst_view.mipLevel = 0;
+//         dst_view.origin = { 0, 0, 0 };
+//         dst_view.aspect = WGPUTextureAspect_All;
+//         WGPUTextureDataLayout layout = {};
+//         layout.offset = 0;
+//         layout.bytesPerRow = width * size_pp;
+//         layout.rowsPerImage = height;
+//         WGPUExtent3D size = { (uint32_t)width, (uint32_t)height, 1 };
+//         wgpuQueueWriteTexture(bd->defaultQueue, &dst_view, pixels, (uint32_t)(width * size_pp * height), &layout, &size);
+//     }
+
+//     // Create the associated sampler
+//     // (Bilinear sampling is required by default. Set 'io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines' or 'style.AntiAliasedLinesUseTex = false' to allow point/nearest sampling)
+//     {
+//         WGPUSamplerDescriptor sampler_desc = {};
+//         sampler_desc.minFilter = WGPUFilterMode_Linear;
+//         sampler_desc.magFilter = WGPUFilterMode_Linear;
+//         sampler_desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
+//         sampler_desc.addressModeU = WGPUAddressMode_Repeat;
+//         sampler_desc.addressModeV = WGPUAddressMode_Repeat;
+//         sampler_desc.addressModeW = WGPUAddressMode_Repeat;
+//         sampler_desc.maxAnisotropy = 1;
+//         bd->renderResources.Sampler = wgpuDeviceCreateSampler(bd->wgpuDevice, &sampler_desc);
+//     }
+
+//     // Store our identifier
+//     static_assert(sizeof(ImTextureID) >= sizeof(bd->renderResources.FontTexture), "Can't pack descriptor handle into TexID, 32-bit not supported yet.");
+//     io.Fonts->SetTexID((ImTextureID)bd->renderResources.FontTextureView);
+// }
+
+// static void ImGui_ImplWGPU_CreateUniformBuffer()
+// {
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+//     WGPUBufferDescriptor ub_desc =
+//     {
+//         nullptr,
+//         "Dear ImGui Uniform buffer",
+//         WGPUBufferUsage_CopyDst | WGPUBufferUsage_Uniform,
+//         MEMALIGN(sizeof(Uniforms), 16),
+//         false
+//     };
+//     bd->renderResources.Uniforms = wgpuDeviceCreateBuffer(bd->wgpuDevice, &ub_desc);
+// }
+
+// bool ImGui_ImplWGPU_CreateDeviceObjects()
+// {
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+//     if (!bd->wgpuDevice)
+//         return false;
+//     if (bd->pipelineState)
+//         ImGui_ImplWGPU_InvalidateDeviceObjects();
+
+//     // Create render pipeline
+//     WGPURenderPipelineDescriptor graphics_pipeline_desc = {};
+//     graphics_pipeline_desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+//     graphics_pipeline_desc.primitive.stripIndexFormat = WGPUIndexFormat_Undefined;
+//     graphics_pipeline_desc.primitive.frontFace = WGPUFrontFace_CW;
+//     graphics_pipeline_desc.primitive.cullMode = WGPUCullMode_None;
+//     graphics_pipeline_desc.multisample.count = 1;
+//     graphics_pipeline_desc.multisample.mask = UINT_MAX;
+//     graphics_pipeline_desc.multisample.alphaToCoverageEnabled = false;
+
+//     // Bind group layouts
+//     WGPUBindGroupLayoutEntry common_bg_layout_entries[2] = {};
+//     common_bg_layout_entries[0].binding = 0;
+//     common_bg_layout_entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+//     common_bg_layout_entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+//     common_bg_layout_entries[1].binding = 1;
+//     common_bg_layout_entries[1].visibility = WGPUShaderStage_Fragment;
+//     common_bg_layout_entries[1].sampler.type = WGPUSamplerBindingType_Filtering;
+
+//     WGPUBindGroupLayoutEntry image_bg_layout_entries[1] = {};
+//     image_bg_layout_entries[0].binding = 0;
+//     image_bg_layout_entries[0].visibility = WGPUShaderStage_Fragment;
+//     image_bg_layout_entries[0].texture.sampleType = WGPUTextureSampleType_Float;
+//     image_bg_layout_entries[0].texture.viewDimension = WGPUTextureViewDimension_2D;
+
+//     WGPUBindGroupLayoutDescriptor common_bg_layout_desc = {};
+//     common_bg_layout_desc.entryCount = 2;
+//     common_bg_layout_desc.entries = common_bg_layout_entries;
+
+//     WGPUBindGroupLayoutDescriptor image_bg_layout_desc = {};
+//     image_bg_layout_desc.entryCount = 1;
+//     image_bg_layout_desc.entries = image_bg_layout_entries;
+
+//     WGPUBindGroupLayout bg_layouts[2];
+//     bg_layouts[0] = wgpuDeviceCreateBindGroupLayout(bd->wgpuDevice, &common_bg_layout_desc);
+//     bg_layouts[1] = wgpuDeviceCreateBindGroupLayout(bd->wgpuDevice, &image_bg_layout_desc);
+
+//     WGPUPipelineLayoutDescriptor layout_desc = {};
+//     layout_desc.bindGroupLayoutCount = 2;
+//     layout_desc.bindGroupLayouts = bg_layouts;
+//     graphics_pipeline_desc.layout = wgpuDeviceCreatePipelineLayout(bd->wgpuDevice, &layout_desc);
+
+//     // Create the vertex shader
+//     WGPUProgrammableStageDescriptor vertex_shader_desc = ImGui_ImplWGPU_CreateShaderModule(__shader_vert_wgsl);
+//     graphics_pipeline_desc.vertex.module = vertex_shader_desc.module;
+//     graphics_pipeline_desc.vertex.entryPoint = vertex_shader_desc.entryPoint;
+
+//     // Vertex input configuration
+//     WGPUVertexAttribute attribute_desc[] =
+//     {
+//         { WGPUVertexFormat_Float32x2, (uint64_t)IM_OFFSETOF(ImDrawVert, pos), 0 },
+//         { WGPUVertexFormat_Float32x2, (uint64_t)IM_OFFSETOF(ImDrawVert, uv),  1 },
+//         { WGPUVertexFormat_Unorm8x4,  (uint64_t)IM_OFFSETOF(ImDrawVert, col), 2 },
+//     };
+
+//     WGPUVertexBufferLayout buffer_layouts[1];
+//     buffer_layouts[0].arrayStride = sizeof(ImDrawVert);
+//     buffer_layouts[0].stepMode = WGPUVertexStepMode_Vertex;
+//     buffer_layouts[0].attributeCount = 3;
+//     buffer_layouts[0].attributes = attribute_desc;
+
+//     graphics_pipeline_desc.vertex.bufferCount = 1;
+//     graphics_pipeline_desc.vertex.buffers = buffer_layouts;
+
+//     // Create the pixel shader
+//     WGPUProgrammableStageDescriptor pixel_shader_desc = ImGui_ImplWGPU_CreateShaderModule(__shader_frag_wgsl);
+
+//     // Create the blending setup
+//     WGPUBlendState blend_state = {};
+//     blend_state.alpha.operation = WGPUBlendOperation_Add;
+//     blend_state.alpha.srcFactor = WGPUBlendFactor_One;
+//     blend_state.alpha.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+//     blend_state.color.operation = WGPUBlendOperation_Add;
+//     blend_state.color.srcFactor = WGPUBlendFactor_SrcAlpha;
+//     blend_state.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+
+//     WGPUColorTargetState color_state = {};
+//     color_state.format = bd->renderTargetFormat;
+//     color_state.blend = &blend_state;
+//     color_state.writeMask = WGPUColorWriteMask_All;
+
+//     WGPUFragmentState fragment_state = {};
+//     fragment_state.module = pixel_shader_desc.module;
+//     fragment_state.entryPoint = pixel_shader_desc.entryPoint;
+//     fragment_state.targetCount = 1;
+//     fragment_state.targets = &color_state;
+
+//     graphics_pipeline_desc.fragment = &fragment_state;
+
+//     // Create depth-stencil State
+//     WGPUDepthStencilState depth_stencil_state = {};
+//     depth_stencil_state.format = bd->depthStencilFormat;
+//     depth_stencil_state.depthWriteEnabled = false;
+//     depth_stencil_state.depthCompare = WGPUCompareFunction_Always;
+//     depth_stencil_state.stencilFront.compare = WGPUCompareFunction_Always;
+//     depth_stencil_state.stencilBack.compare = WGPUCompareFunction_Always;
+
+//     // Configure disabled depth-stencil state
+//     graphics_pipeline_desc.depthStencil = (bd->depthStencilFormat == WGPUTextureFormat_Undefined) ? nullptr :  &depth_stencil_state;
+
+//     bd->pipelineState = wgpuDeviceCreateRenderPipeline(bd->wgpuDevice, &graphics_pipeline_desc);
+
+//     ImGui_ImplWGPU_CreateFontsTexture();
+//     ImGui_ImplWGPU_CreateUniformBuffer();
+
+//     // Create resource bind group
+//     WGPUBindGroupEntry common_bg_entries[] =
+//     {
+//         { nullptr, 0, bd->renderResources.Uniforms, 0, MEMALIGN(sizeof(Uniforms), 16), 0, 0 },
+//         { nullptr, 1, 0, 0, 0, bd->renderResources.Sampler, 0 },
+//     };
+
+//     WGPUBindGroupDescriptor common_bg_descriptor = {};
+//     common_bg_descriptor.layout = bg_layouts[0];
+//     common_bg_descriptor.entryCount = sizeof(common_bg_entries) / sizeof(WGPUBindGroupEntry);
+//     common_bg_descriptor.entries = common_bg_entries;
+//     bd->renderResources.CommonBindGroup = wgpuDeviceCreateBindGroup(bd->wgpuDevice, &common_bg_descriptor);
+
+//     WGPUBindGroup image_bind_group = ImGui_ImplWGPU_CreateImageBindGroup(bg_layouts[1], bd->renderResources.FontTextureView);
+//     bd->renderResources.ImageBindGroup = image_bind_group;
+//     bd->renderResources.ImageBindGroupLayout = bg_layouts[1];
+//     bd->renderResources.ImageBindGroups.SetVoidPtr(ImHashData(&bd->renderResources.FontTextureView, sizeof(ImTextureID)), image_bind_group);
+
+//     SafeRelease(vertex_shader_desc.module);
+//     SafeRelease(pixel_shader_desc.module);
+//     SafeRelease(bg_layouts[0]);
+
+//     return true;
+// }
+
+// void ImGui_ImplWGPU_InvalidateDeviceObjects()
+// {
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+//     if (!bd->wgpuDevice)
+//         return;
+
+//     SafeRelease(bd->pipelineState);
+//     SafeRelease(bd->renderResources);
+
+//     ImGuiIO& io = ImGui::GetIO();
+//     io.Fonts->SetTexID(0); // We copied g_pFontTextureView to io.Fonts->TexID so let's clear that as well.
+
+//     for (unsigned int i = 0; i < bd->numFramesInFlight; i++)
+//         SafeRelease(bd->pFrameResources[i]);
+// }
+
+// bool ImGui_ImplWGPU_Init(WGPUDevice device, int num_frames_in_flight, WGPUTextureFormat rt_format, WGPUTextureFormat depth_format)
+// {
+//     ImGuiIO& io = ImGui::GetIO();
+//     IM_ASSERT(io.BackendRendererUserData == nullptr && "Already initialized a renderer backend!");
+
+//     // Setup backend capabilities flags
+//     ImGui_ImplWGPU_Data* bd = IM_NEW(ImGui_ImplWGPU_Data)();
+//     io.BackendRendererUserData = (void*)bd;
+//     io.BackendRendererName = "imgui_impl_webgpu";
+//     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset;  // We can honor the ImDrawCmd::VtxOffset field, allowing for large meshes.
+
+//     bd->wgpuDevice = device;
+//     bd->defaultQueue = wgpuDeviceGetQueue(bd->wgpuDevice);
+//     bd->renderTargetFormat = rt_format;
+//     bd->depthStencilFormat = depth_format;
+//     bd->numFramesInFlight = num_frames_in_flight;
+//     bd->frameIndex = UINT_MAX;
+
+//     bd->renderResources.FontTexture = nullptr;
+//     bd->renderResources.FontTextureView = nullptr;
+//     bd->renderResources.Sampler = nullptr;
+//     bd->renderResources.Uniforms = nullptr;
+//     bd->renderResources.CommonBindGroup = nullptr;
+//     bd->renderResources.ImageBindGroups.Data.reserve(100);
+//     bd->renderResources.ImageBindGroup = nullptr;
+//     bd->renderResources.ImageBindGroupLayout = nullptr;
+
+//     // Create buffers with a default size (they will later be grown as needed)
+//     bd->pFrameResources = new FrameResources[num_frames_in_flight];
+//     for (int i = 0; i < num_frames_in_flight; i++)
+//     {
+//         FrameResources* fr = &bd->pFrameResources[i];
+//         fr->IndexBuffer = nullptr;
+//         fr->VertexBuffer = nullptr;
+//         fr->IndexBufferHost = nullptr;
+//         fr->VertexBufferHost = nullptr;
+//         fr->IndexBufferSize = 10000;
+//         fr->VertexBufferSize = 5000;
+//     }
+
+//     return true;
+// }
+
+// void ImGui_ImplWGPU_Shutdown()
+// {
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+//     IM_ASSERT(bd != nullptr && "No renderer backend to shutdown, or already shutdown?");
+//     ImGuiIO& io = ImGui::GetIO();
+
+//     ImGui_ImplWGPU_InvalidateDeviceObjects();
+//     delete[] bd->pFrameResources;
+//     bd->pFrameResources = nullptr;
+//     wgpuQueueRelease(bd->defaultQueue);
+//     bd->wgpuDevice = nullptr;
+//     bd->numFramesInFlight = 0;
+//     bd->frameIndex = UINT_MAX;
+
+//     io.BackendRendererName = nullptr;
+//     io.BackendRendererUserData = nullptr;
+//     io.BackendFlags &= ~ImGuiBackendFlags_RendererHasVtxOffset;
+//     IM_DELETE(bd);
+// }
+
+// void ImGui_ImplWGPU_NewFrame()
+// {
+//     ImGui_ImplWGPU_Data* bd = ImGui_ImplWGPU_GetBackendData();
+//     if (!bd->pipelineState)
+//         ImGui_ImplWGPU_CreateDeviceObjects();
+// }
+
+// //-----------------------------------------------------------------------------
+
+// #endif // #ifndef IMGUI_DISABLE
