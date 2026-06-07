@@ -4,7 +4,7 @@ using WebGpuSharp.FFI;
 namespace GuiSetup.ImGuiImpl;
 
 
-internal unsafe struct ImGuiStorage : IDisposable
+internal readonly unsafe struct ImGuiStorage : IDisposable
 {
     [StructLayout(LayoutKind.Explicit)]
     private unsafe struct Value

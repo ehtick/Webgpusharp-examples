@@ -15,8 +15,16 @@ internal unsafe struct FrameResources : IDisposable
 
     public void Dispose()
     {
-        IndexBuffer.Dispose();
-        VertexBuffer.Dispose();
+        if (IndexBuffer != null)
+        {
+            IndexBuffer.Dispose();
+        }
+
+        if (VertexBuffer != null)
+        {
+            VertexBuffer.Dispose();
+        }
+
         NativeMemory.Free(IndexBufferHost);
         NativeMemory.Free(VertexBufferHost);
         IndexBufferHost = null;

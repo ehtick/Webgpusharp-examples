@@ -1,7 +1,9 @@
+using GuiSetup.ImGuiImpl;
 using ImGuiNET;
 using SDL2;
 using Setup;
 using WebGpuSharp;
+using WebGpuSharp.Marshalling;
 
 namespace GuiSetup;
 
@@ -38,15 +40,12 @@ public class DearImGuiContext : IGuiContext<DearImGuiContext>
             io.NativePtr->IniFilename = null;
         }
 
-        var initInfo = new ImGui_Impl_WebGPUSharp.ImGui_ImplWGPU_InitInfo()
-        {
-            device = device,
-            num_frames_in_flight = 3,
-            rt_format = ttFormat,
-            depth_format = TextureFormat.Undefined,
-        };
-
-        ImGui_Impl_WebGPUSharp.Init(initInfo);
+        ImGui_Impl_WebGPUSharp.ImGui_ImplWGPU_Init(
+            device: WebGPUMarshal.GetHandle(device).AddRef(),
+            numFramesInFlight: 3,
+            rtFormat: ttFormat,
+            depthFormat: TextureFormat.Undefined
+        );
         ImGui_Impl_SDL2.Init(_window.Value);
 
         io.Fonts.AddFontDefault();
@@ -56,7 +55,7 @@ public class DearImGuiContext : IGuiContext<DearImGuiContext>
     public void NewFrame()
     {
         ImGui_Impl_SDL2.NewFrame();
-        ImGui_Impl_WebGPUSharp.NewFrame();
+        ImGui_Impl_WebGPUSharp.ImGui_ImplWGPU_NewFrame();
         ImGui.NewFrame();
     }
 
@@ -109,7 +108,7 @@ public class DearImGuiContext : IGuiContext<DearImGuiContext>
             var RenderPassEncoder = commandEncoder.BeginRenderPass(renderPassDesc);
 
             ImGui.Render();
-            ImGui_Impl_WebGPUSharp.RenderDrawData(ImGui.GetDrawData(), RenderPassEncoder);
+            ImGui_Impl_WebGPUSharp.ImGui_ImplWGPU_RenderDrawData(ImGui.GetDrawData(), WebGPUMarshal.GetHandle(RenderPassEncoder));
 
             RenderPassEncoder.End();
         }

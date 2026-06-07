@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace GuiSetup.ImGuiImpl;
 
 
@@ -31,6 +33,11 @@ internal static class ImGuiHash
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public unsafe static uint ImHashData(void* data, int dataSize, uint seed = 0)
+    {
+        return ImHashData(data, (nuint)dataSize, seed);
+    }
 
     public unsafe static uint ImHashData(void* data, nuint dataSize, uint seed = 0)
     {

@@ -3,7 +3,7 @@ using WebGpuSharp.FFI;
 namespace GuiSetup.ImGuiImpl;
 
 
-internal struct RenderResources: IDisposable
+internal struct RenderResources : IDisposable
 {
     /// <summary>
     /// Font texture
@@ -23,7 +23,7 @@ internal struct RenderResources: IDisposable
     public BufferHandle Uniforms = BufferHandle.Null;
     /// <summary>
     /// Resources bind-group to bind the common resources to pipeline
-    /// </summary> 
+    /// </summary>
     public BindGroupHandle CommonBindGroup = BindGroupHandle.Null;
     /// <summary>
     /// Resources bind-group to bind the font/image resources to pipeline (this is a key->value map)
@@ -58,5 +58,7 @@ internal struct RenderResources: IDisposable
         ImageBindGroup = BindGroupHandle.Null;
         ImageBindGroupLayout.Dispose();
         ImageBindGroupLayout = BindGroupLayoutHandle.Null;
+        ImageBindGroups.Dispose();
+        ImageBindGroups = default;
     }
 }

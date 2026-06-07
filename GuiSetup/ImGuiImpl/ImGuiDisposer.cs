@@ -3,7 +3,7 @@ using WebGpuSharp.FFI;
 
 namespace GuiSetup.ImGuiImpl;
 
-static class ImGuiDisposer
+static unsafe class ImGuiDisposer
 {
     public static unsafe void SafeRelease(ref ushort* res)
     {
@@ -103,5 +103,13 @@ static class ImGuiDisposer
         SafeRelease(ref res.CommonBindGroup);
         SafeRelease(ref res.ImageBindGroup);
         SafeRelease(ref res.ImageBindGroupLayout);
+    }
+
+    public static void SafeRelease(ref FrameResources res)
+    {
+        SafeRelease(ref res.IndexBuffer);
+        SafeRelease(ref res.VertexBuffer);
+        SafeRelease(ref res.IndexBufferHost);
+        SafeRelease(ref res.VertexBufferHost);
     }
 }

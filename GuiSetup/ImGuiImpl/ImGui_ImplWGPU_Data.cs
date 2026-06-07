@@ -12,7 +12,7 @@ internal unsafe struct ImGui_ImplWGPU_Data
     public TextureFormat depthStencilFormat = TextureFormat.Undefined;
     public RenderPipelineHandle pipelineState = RenderPipelineHandle.Null;
 
-    public RenderResources renderResources;
+    public RenderResources renderResources = new();
     public FrameResources* pFrameResources = null;
     public uint numFramesInFlight = 0;
     public uint frameIndex = uint.MaxValue;
