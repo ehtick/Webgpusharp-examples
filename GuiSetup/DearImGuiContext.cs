@@ -46,7 +46,7 @@ public class DearImGuiContext : IGuiContext<DearImGuiContext>
             rtFormat: ttFormat,
             depthFormat: TextureFormat.Undefined
         );
-        ImGui_Impl_SDL2.Init(_window.Value);
+        ImGui_Impl_SDL2.ImGui_ImplSDL2_Init(_window.Value, IntPtr.Zero);
 
         io.Fonts.AddFontDefault();
         io.Fonts.Build();
@@ -54,7 +54,7 @@ public class DearImGuiContext : IGuiContext<DearImGuiContext>
 
     public void NewFrame()
     {
-        ImGui_Impl_SDL2.NewFrame();
+        ImGui_Impl_SDL2.ImGui_ImplSDL2_NewFrame();
         ImGui_Impl_WebGPUSharp.ImGui_ImplWGPU_NewFrame();
         ImGui.NewFrame();
     }
@@ -119,6 +119,6 @@ public class DearImGuiContext : IGuiContext<DearImGuiContext>
 
     bool IGuiContext.ProcessEvent(in SDL.SDL_Event @event)
     {
-        return ImGui_Impl_SDL2.ProcessEvent(@event);
+        return ImGui_Impl_SDL2.ImGui_ImplSDL2_ProcessEvent(@event);
     }
 }
