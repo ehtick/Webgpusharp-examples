@@ -3,7 +3,7 @@ using WebGpuSharp.FFI;
 namespace GuiSetup.ImGuiImpl;
 
 
-internal struct RenderResources : IDisposable
+internal struct RenderResources()
 {
     /// <summary>
     /// Font texture
@@ -36,29 +36,5 @@ internal struct RenderResources : IDisposable
     /// <summary>
     ///  Cache layout used for the image bind group. Avoids allocating unnecessary JS objects when working with WebASM
     /// </summary>
-    public BindGroupLayoutHandle ImageBindGroupLayout = BindGroupLayoutHandle.Null; //
-
-    public RenderResources()
-    {
-    }
-
-    public void Dispose()
-    {
-        FontTexture.Dispose();
-        FontTexture = TextureHandle.Null;
-        FontTextureView.Dispose();
-        FontTextureView = TextureViewHandle.Null;
-        Sampler.Dispose();
-        Sampler = SamplerHandle.Null;
-        Uniforms.Dispose();
-        Uniforms = BufferHandle.Null;
-        CommonBindGroup.Dispose();
-        CommonBindGroup = BindGroupHandle.Null;
-        ImageBindGroup.Dispose();
-        ImageBindGroup = BindGroupHandle.Null;
-        ImageBindGroupLayout.Dispose();
-        ImageBindGroupLayout = BindGroupLayoutHandle.Null;
-        ImageBindGroups.Dispose();
-        ImageBindGroups = default;
-    }
+    public BindGroupLayoutHandle ImageBindGroupLayout = BindGroupLayoutHandle.Null;
 }

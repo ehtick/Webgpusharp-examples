@@ -4,7 +4,7 @@ using WebGpuSharp.FFI;
 
 namespace GuiSetup.ImGuiImpl;
 
-internal unsafe struct ImGui_ImplWGPU_Data
+internal unsafe struct ImGui_ImplWGPU_Data()
 {
     public DeviceHandle wgpuDevice = DeviceHandle.Null;
     public QueueHandle defaultQueue = QueueHandle.Null;
@@ -16,8 +16,4 @@ internal unsafe struct ImGui_ImplWGPU_Data
     public FrameResources* pFrameResources = null;
     public uint numFramesInFlight = 0;
     public uint frameIndex = uint.MaxValue;
-
-    public ImGui_ImplWGPU_Data()
-    {
-    }
 }

@@ -4,7 +4,6 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ImGuiNET;
-using SDL2;
 using static SDL2.SDL;
 
 internal unsafe static class ImGui_Impl_SDL2

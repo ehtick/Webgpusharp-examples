@@ -3,7 +3,7 @@ using System.Numerics;
 namespace GuiSetup.ImGuiImpl;
 
 
-public struct Uniforms
+internal struct ImGuiSUniforms
 {
     public Matrix4x4 mvp;
     public float gamma;

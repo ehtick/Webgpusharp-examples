@@ -11,7 +11,7 @@ using System.Numerics;
 
 namespace GuiSetup.ImGuiImpl;
 
-public static unsafe class ImGui_Impl_WebGPUSharp
+internal static unsafe class ImGui_Impl_WebGPUSharp
 {
     private static readonly GCHandle s_backendNameHandle =
         GCHandle.Alloc("imgui_impl_webgpu\0"u8.ToArray(), GCHandleType.Pinned);
@@ -93,7 +93,7 @@ public static unsafe class ImGui_Impl_WebGPUSharp
                 0.0f, 0.0f, 0.5f, 0.0f,
                 (r + l) / (l - r), (t + b) / (b - t), 0.5f, 1.0f
             );
-            bd->defaultQueue.WriteBuffer(bd->renderResources.Uniforms!, (ulong)Marshal.OffsetOf<Uniforms>(nameof(Uniforms.mvp)), &mvp, (nuint)sizeof(Matrix4x4));
+            bd->defaultQueue.WriteBuffer(bd->renderResources.Uniforms!, (ulong)Marshal.OffsetOf<ImGuiSUniforms>(nameof(ImGuiSUniforms.mvp)), &mvp, (nuint)sizeof(Matrix4x4));
 
             float gamma;
             switch (bd->renderTargetFormat)
@@ -127,7 +127,7 @@ public static unsafe class ImGui_Impl_WebGPUSharp
                     break;
             }
 
-            bd->defaultQueue.WriteBuffer(bd->renderResources.Uniforms!, (ulong)Marshal.OffsetOf<Uniforms>(nameof(Uniforms.gamma)), &gamma, sizeof(float));
+            bd->defaultQueue.WriteBuffer(bd->renderResources.Uniforms!, (ulong)Marshal.OffsetOf<ImGuiSUniforms>(nameof(ImGuiSUniforms.gamma)), &gamma, sizeof(float));
         }
 
         // Setup viewport
@@ -370,7 +370,7 @@ public static unsafe class ImGui_Impl_WebGPUSharp
         {
             Label = "Dear ImGui Uniform buffer"u8,
             Usage = BufferUsage.CopyDst | BufferUsage.Uniform,
-            Size = Align((ulong)sizeof(Uniforms), 16),
+            Size = Align((ulong)sizeof(ImGuiSUniforms), 16),
             MappedAtCreation = false,
         });
     }
@@ -560,7 +560,7 @@ public static unsafe class ImGui_Impl_WebGPUSharp
             Binding = 0,
             Buffer = bd->renderResources.Uniforms,
             Offset = 0,
-            Size = Align((ulong)sizeof(Uniforms), 16),
+            Size = Align((ulong)sizeof(ImGuiSUniforms), 16),
         };
         common_bg_entries[1] = new()
         {
