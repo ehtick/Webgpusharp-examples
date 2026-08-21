@@ -70,7 +70,6 @@ return Run("Particles", WIDTH, HEIGHT, async runContext =>
 
     Adapter adapter = await instance.RequestAdapterAsync(new()
     {
-        PowerPreference = PowerPreference.HighPerformance,
         CompatibleSurface = surface
     });
 

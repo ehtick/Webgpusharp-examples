@@ -109,8 +109,7 @@ return Run("Skinned Mesh", WIDTH, HEIGHT, async runContext =>
 
     var adapter = await instance.RequestAdapterAsync(new()
     {
-        PowerPreference = PowerPreference.HighPerformance,
-        CompatibleSurface = surface,
+        CompatibleSurface = surface
     });
 
     var device = await adapter.RequestDeviceAsync(new()

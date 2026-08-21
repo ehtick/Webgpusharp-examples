@@ -56,8 +56,7 @@ return Run("Compute Boids", WIDTH, HEIGHT, async runContext =>
 
     var adapter = await instance.RequestAdapterAsync(new()
     {
-        CompatibleSurface = surface,
-        FeatureLevel = FeatureLevel.Compatibility
+        CompatibleSurface = surface
     });
 
     var hasTimestampQuery = adapter.HasFeature(FeatureName.TimestampQuery);

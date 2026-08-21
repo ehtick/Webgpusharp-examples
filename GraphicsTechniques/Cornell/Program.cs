@@ -46,8 +46,8 @@ return Run("Cornell", WIDTH, HEIGHT, async runContext =>
     {
         CompatibleSurface = surface,
         BackendType = BackendType.Vulkan,
-        FeatureLevel = FeatureLevel.Compatibility,
-        PowerPreference = PowerPreference.HighPerformance,
+        
+        
     });
 
     var surfaceCapabilities = surface.GetCapabilities(adapter)!;

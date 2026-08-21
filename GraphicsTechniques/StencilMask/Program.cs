@@ -34,8 +34,7 @@ return Run("Stencil Mask", WIDTH, HEIGHT, async runContext =>
 
     var adapter = await instance.RequestAdapterAsync(new()
     {
-        CompatibleSurface = surface,
-        FeatureLevel = FeatureLevel.Compatibility,
+        CompatibleSurface = surface
     });
 
     var device = await adapter.RequestDeviceAsync(new()

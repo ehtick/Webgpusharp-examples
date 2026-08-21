@@ -42,8 +42,7 @@ return Run("Shadow Mapping", WIDTH, HEIGHT, async runContext =>
     var surface = runContext.GetSurface();
     var adapter = await instance.RequestAdapterAsync(new RequestAdapterOptions
     {
-        CompatibleSurface = surface,
-        FeatureLevel = FeatureLevel.Compatibility,
+        CompatibleSurface = surface   
     });
     var device = await adapter.RequestDeviceAsync(new()
     {

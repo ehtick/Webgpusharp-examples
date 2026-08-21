@@ -33,7 +33,6 @@ return Run("Bitonic Sort", WindowWidth, WindowHeight, async runContext =>
 
     var adapter = await instance.RequestAdapterAsync(new()
     {
-        FeatureLevel = FeatureLevel.Compatibility,
         CompatibleSurface = surface
     });
 

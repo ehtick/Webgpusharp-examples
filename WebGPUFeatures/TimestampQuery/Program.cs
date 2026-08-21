@@ -62,8 +62,7 @@ return Run("Timestamp Query", WIDTH, HEIGHT, async runContext =>
 
     var adapter = await instance.RequestAdapterAsync(new()
     {
-        FeatureLevel = FeatureLevel.Compatibility,
-        CompatibleSurface = surface,
+        CompatibleSurface = surface
     });
 
     // The use of timestamps require a dedicated adapter feature:

@@ -69,8 +69,7 @@ return Run("Render Bundles", WIDTH, HEIGHT, async runContext =>
 
     var adapter = await instance.RequestAdapterAsync(new()
     {
-        CompatibleSurface = surface,
-        PowerPreference = PowerPreference.HighPerformance,
+        CompatibleSurface = surface
     });
     var device = (
         await adapter.RequestDeviceAsync(

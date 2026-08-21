@@ -48,7 +48,7 @@ return Run("Image Blur", windowWidth, windowHeight, async runContext =>
     var adapter = await instance.RequestAdapterAsync(new()
     {
         CompatibleSurface = surface,
-        FeatureLevel = FeatureLevel.Compatibility,
+        
     });
 
     var device = await adapter.RequestDeviceAsync(new()

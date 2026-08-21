@@ -90,7 +90,7 @@ return Run("Conway's Game of Life", WIDTH, HEIGHT, async runContext =>
     var adapter = await instance.RequestAdapterAsync(new()
     {
         CompatibleSurface = surface,
-        FeatureLevel = FeatureLevel.Compatibility
+        
     });
 
     var hasTimestampQuery = adapter.HasFeature(FeatureName.TimestampQuery);

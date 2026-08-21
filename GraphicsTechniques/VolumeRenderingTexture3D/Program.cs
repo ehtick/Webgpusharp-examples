@@ -122,8 +122,8 @@ return Run("Volume Rendering (Texture 3D)", WIDTH, HEIGHT, async runContext =>
 
     var adapter = await instance.RequestAdapterAsync(new()
     {
-        CompatibleSurface = surface,
-        FeatureLevel = FeatureLevel.Compatibility,
+        CompatibleSurface = surface
+        
     }) ?? throw new Exception("Could not create adapter");
 
     var adapterFeatures = adapter.GetFeatures();

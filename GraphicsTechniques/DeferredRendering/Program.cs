@@ -67,7 +67,7 @@ return Run("Deferred Rendering", WIDTH, HEIGHT, async runContext =>
     var adapter = await instance.RequestAdapterAsync(new RequestAdapterOptions
     {
         CompatibleSurface = surface,
-        FeatureLevel = FeatureLevel.Compatibility,
+        
     });
     var device = await adapter.RequestDeviceAsync(new()
     {
